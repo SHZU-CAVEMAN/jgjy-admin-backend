@@ -42,6 +42,24 @@ class Article(BaseModel):
     status: Mapped[str] = mapped_column(String(16), default="草稿")
 
 
+class WechatDraft(BaseModel):
+    """缓存从微信公众号草稿箱同步的草稿。"""
+
+    __tablename__ = "t_wechat_draft"
+
+    media_id: Mapped[str] = mapped_column(String(128), unique=True, index=True)
+    title: Mapped[str] = mapped_column(String(255), default="")
+    author: Mapped[str] = mapped_column(String(128), default="")
+    category: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    digest: Mapped[str] = mapped_column(Text, default="")
+    thumbnail_url: Mapped[str] = mapped_column(String(1024), default="")
+    draft_created_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    draft_updated_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    articles_json: Mapped[str] = mapped_column(Text, default="[]")
+    content_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    content_synced_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+
 class Interaction(BaseModel):
     """表示客户与推文之间的互动。"""
 

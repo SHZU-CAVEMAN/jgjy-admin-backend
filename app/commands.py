@@ -2,10 +2,12 @@
 
 import os
 import secrets
+import time
 from datetime import date, datetime
 
 import click
 from flask import Flask
+from sqlalchemy import inspect, text
 
 from app.blueprints.auth.models import AdminUser
 from app.blueprints.company.models import CompanyInfo, Honor
@@ -15,6 +17,7 @@ from app.blueprints.news.models import (
     Interaction,
     NewsCategory,
     PullSetting,
+    WechatDraft,
 )
 from app.blueprints.products.models import Product, ProductCategory, TraceabilityBatch
 from app.common.extensions import db
@@ -31,6 +34,45 @@ def register_commands(app: Flask) -> None:
         if seed:
             seed_database()
         click.echo("Database initialized.")
+
+    @app.cli.command("upgrade-news-draft-schema")
+    # 为已有草稿表补齐推文分类字段
+    def upgrade_news_draft_schema() -> None:
+        columns = {
+            column["name"] for column in inspect(db.engine).get_columns(WechatDraft.__tablename__)
+        }
+        if "category" in columns:
+            click.echo("Wechat draft schema is already up to date.")
+            return
+        db.session.execute(
+            text(f"ALTER TABLE {WechatDraft.__tablename__} ADD COLUMN category VARCHAR(64)")
+        )
+        db.session.commit()
+        click.echo("Wechat draft category column added.")
+
+    @app.cli.command("sync-wechat-drafts")
+    @click.option("--once", is_flag=True, help="Sync once and exit.")
+    def sync_wechat_drafts(once: bool) -> None:
+        """每五分钟同步一次微信公众号草稿箱。"""
+        from app.blueprints.news.services import (
+            get_pull_setting,
+            sync_wechat_drafts as sync,
+        )
+
+        interval = app.config["WECHAT_DRAFT_SYNC_INTERVAL_SECONDS"]
+        while True:
+            try:
+                if get_pull_setting().enabled:
+                    result = sync()
+                    click.echo(f"Synced {result['synced']} drafts.")
+                else:
+                    click.echo("Draft sync is disabled.")
+            except Exception as exc:
+                app.logger.exception("微信公众号草稿定时同步失败")
+                click.echo(f"Draft sync failed: {exc}", err=True)
+            if once:
+                return
+            time.sleep(interval)
 
 
 def seed_database() -> None:

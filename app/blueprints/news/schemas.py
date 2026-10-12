@@ -52,6 +52,35 @@ class ArticleSchema(KeyedSchema):
     )
 
 
+class WechatDraftSchema(KeyedSchema):
+    """序列化微信公众号草稿摘要和正文。"""
+
+    media_id = fields.String(data_key="mediaId")
+    title = fields.String()
+    author = fields.String()
+    category = fields.String(allow_none=True)
+    digest = fields.String()
+    thumbnail_url = fields.String(data_key="thumbnailUrl")
+    draft_created_at = fields.DateTime(
+        data_key="createdAt", format="%Y-%m-%d %H:%M", allow_none=True
+    )
+    draft_updated_at = fields.DateTime(
+        data_key="updatedAt", format="%Y-%m-%d %H:%M", allow_none=True
+    )
+    content_synced_at = fields.DateTime(
+        data_key="contentSyncedAt", format="%Y-%m-%d %H:%M", allow_none=True
+    )
+
+
+class WechatDraftUpdateSchema(Schema):
+    """校验本地微信公众号草稿可编辑信息。"""
+
+    title = fields.String(validate=validate.Length(min=1, max=255))
+    author = fields.String(validate=validate.Length(max=128))
+    category = fields.String(allow_none=True, validate=validate.Length(min=1, max=64))
+    digest = fields.String(validate=validate.Length(max=65535))
+
+
 class InteractionSchema(KeyedSchema):
     """校验并序列化推文互动。"""
 

@@ -1,5 +1,10 @@
 """End-to-end tests for the backend API."""
 
+import json
+from unittest.mock import Mock
+
+from requests import Response
+
 
 def test_health(client):
     """Health endpoint should confirm database connectivity."""
@@ -124,3 +129,144 @@ def test_cannot_delete_current_user(client, auth_headers, admin_id):
     )
 
     assert response.status_code == 400
+
+
+def test_wechat_drafts_sync_and_content_preview(client, auth_headers, app, monkeypatch):
+    """Draft summaries and bodies should be stored and reused after retrieval."""
+    app.config["WECHAT_OFFICIAL_ACCOUNT_APPID"] = "test-appid"
+    app.config["WECHAT_OFFICIAL_ACCOUNT_SECRET"] = "test-secret"
+
+    class FakeRedis:
+        def __init__(self):
+            self.values = {}
+
+        def get(self, key):
+            return self.values.get(key)
+
+        def setex(self, key, expires_in, value):
+            self.values[key] = value
+
+    token_response = Mock()
+    token_response.raise_for_status.return_value = None
+    token_response.json.return_value = {
+        "access_token": "test-token",
+        "expires_in": 7200,
+    }
+    list_response = Response()
+    list_response.status_code = 200
+    list_response.encoding = "latin-1"
+    list_response._content = json.dumps({
+        "total_count": 1,
+        "item_count": 1,
+        "item": [
+            {
+                "media_id": "draft-media-id",
+                "content": {
+                    "create_time": 1783560351,
+                    "update_time": 1784712146,
+                    "news_item": [
+                        {
+                            "title": "测试草稿",
+                            "author": "编辑",
+                            "digest": "测试摘要",
+                            "thumb_url": "https://example.com/cover.jpg",
+                        }
+                    ],
+                },
+                "update_time": 1784712146,
+            }
+        ],
+    }, ensure_ascii=False).encode("utf-8")
+    detail_response = Response()
+    detail_response.status_code = 200
+    detail_response.encoding = "latin-1"
+    detail_response._content = json.dumps({
+        "news_item": [{"title": "测试草稿", "content": "<p>测试正文</p>"}]
+    }, ensure_ascii=False).encode("utf-8")
+    post = Mock(side_effect=[list_response, detail_response, list_response, detail_response])
+    get = Mock(return_value=token_response)
+    fake_redis = FakeRedis()
+    monkeypatch.setattr("app.blueprints.news.services.requests.post", post)
+    monkeypatch.setattr("app.blueprints.news.services.requests.get", get)
+    monkeypatch.setattr("app.blueprints.news.services.get_redis", lambda: fake_redis)
+
+    synced = client.post("/api/news/drafts/sync", headers=auth_headers)
+    assert synced.status_code == 200
+    assert synced.get_json()["data"]["synced"] == 1
+    assert post.call_args_list[0].kwargs["json"]["no_content"] == 1
+    assert get.call_args.kwargs["params"] == {
+        "grant_type": "client_credential",
+        "appid": "test-appid",
+        "secret": "test-secret",
+    }
+    draft = client.get("/api/news/drafts", headers=auth_headers).get_json()["data"]["items"][0]
+    assert draft["title"] == "测试草稿"
+    assert draft["digest"] == "测试摘要"
+
+    category = client.post(
+        "/api/news/categories",
+        headers=auth_headers,
+        json={
+            "name": "测试草稿分类",
+            "count": 0,
+            "updated": "2026-10-09",
+            "status": "启用",
+        },
+    )
+    assert category.status_code == 201
+
+    updated = client.patch(
+        "/api/news/drafts/draft-media-id",
+        headers=auth_headers,
+        json={
+            "title": "已编辑草稿",
+            "author": "新编辑",
+            "category": "测试草稿分类",
+            "digest": "已编辑摘要",
+        },
+    )
+    assert updated.status_code == 200
+    updated_data = updated.get_json()["data"]
+    assert updated_data["mediaId"] == "draft-media-id"
+    assert updated_data["title"] == "已编辑草稿"
+    assert updated_data["author"] == "新编辑"
+    assert updated_data["category"] == "测试草稿分类"
+    assert updated_data["digest"] == "已编辑摘要"
+
+    invalid_category = client.patch(
+        "/api/news/drafts/draft-media-id",
+        headers=auth_headers,
+        json={"category": "不存在的分类"},
+    )
+    assert invalid_category.status_code == 422
+
+    drafts = client.get("/api/news/drafts?keyword=已编辑", headers=auth_headers)
+    item = drafts.get_json()["data"]["items"][0]
+    assert item["mediaId"] == "draft-media-id"
+    assert item["title"] == "已编辑草稿"
+    assert item["contentSyncedAt"] is None
+
+    content = client.get(
+        "/api/news/drafts/draft-media-id/content", headers=auth_headers
+    )
+    assert content.status_code == 200
+    assert content.get_json()["data"]["articles"][0]["content"] == "<p>测试正文</p>"
+
+    cached_content = client.get(
+        "/api/news/drafts/draft-media-id/content", headers=auth_headers
+    )
+    assert cached_content.status_code == 200
+    assert post.call_count == 2
+    assert get.call_count == 1
+
+    refreshed = client.post("/api/news/drafts/sync", headers=auth_headers)
+    assert refreshed.status_code == 200
+    refreshed_draft = client.get("/api/news/drafts", headers=auth_headers).get_json()["data"]["items"][0]
+    assert refreshed_draft["contentSyncedAt"] is None
+
+    refreshed_content = client.get(
+        "/api/news/drafts/draft-media-id/content", headers=auth_headers
+    )
+    assert refreshed_content.status_code == 200
+    assert refreshed_content.get_json()["data"]["articles"][0]["content"] == "<p>测试正文</p>"
+    assert post.call_count == 4
