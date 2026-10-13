@@ -6,7 +6,12 @@ from app.common.crud import CrudService
 from app.common.extensions import db
 
 from .models import CompanyInfo, Honor
-from .schemas import CompanyContactSchema, CompanyProfileSchema, HonorSchema
+from .schemas import (
+    CompanyContactSchema,
+    CompanyInfoSchema,
+    CompanyProfileSchema,
+    HonorSchema,
+)
 
 honor_service = CrudService(Honor, HonorSchema(), ("name", "issuer"), ("status",))
 
@@ -41,3 +46,8 @@ def profile_schema() -> CompanyProfileSchema:
 def contact_schema() -> CompanyContactSchema:
     """返回企业联系方式数据模式。"""
     return CompanyContactSchema()
+
+
+def info_schema() -> CompanyInfoSchema:
+    """返回完整企业信息数据模式。"""
+    return CompanyInfoSchema()

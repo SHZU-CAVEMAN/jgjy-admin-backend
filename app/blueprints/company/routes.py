@@ -10,6 +10,7 @@ from .services import (
     contact_schema,
     get_company_info,
     honor_service,
+    info_schema,
     profile_schema,
     update_company_info,
 )
@@ -17,6 +18,22 @@ from .services import (
 company_bp = Blueprint("company", __name__, url_prefix="/api/company")
 
 register_crud_routes(company_bp, "/honors", "honors", honor_service)
+
+
+@company_bp.get("/info")
+@jwt_required()
+def get_info():
+    """返回完整企业信息。"""
+    return success(info_schema().dump(get_company_info()))
+
+
+@company_bp.put("/info")
+@jwt_required()
+def put_info():
+    """替换完整企业信息。"""
+    schema = info_schema()
+    info = update_company_info(request.get_json(silent=True) or {}, schema)
+    return success(schema.dump(info), "保存成功")
 
 
 @company_bp.get("/profile")

@@ -59,6 +59,29 @@ def register_commands(app: Flask) -> None:
         db.session.commit()
         click.echo(f"Wechat draft columns added: {', '.join(missing_columns)}.")
 
+    @app.cli.command("upgrade-company-info-schema")
+    def upgrade_company_info_schema() -> None:
+        """将企业规模字段升级为长文本类型。"""
+        columns = {
+            column["name"]: column
+            for column in inspect(db.engine).get_columns(CompanyInfo.__tablename__)
+        }
+        scale_column = columns.get("scale")
+        if scale_column is None:
+            click.echo("Company info table does not contain a scale column.", err=True)
+            return
+        if "TEXT" in str(scale_column["type"]).upper():
+            click.echo("Company info schema is already up to date.")
+            return
+        if db.engine.dialect.name != "mysql":
+            click.echo("The company info schema upgrade is supported for MySQL only.", err=True)
+            return
+        db.session.execute(
+            text(f"ALTER TABLE {CompanyInfo.__tablename__} MODIFY COLUMN scale TEXT NOT NULL")
+        )
+        db.session.commit()
+        click.echo("Company info scale column upgraded to TEXT.")
+
     @app.cli.command("sync-wechat-drafts")
     @click.option("--once", is_flag=True, help="Sync once and exit.")
     def sync_wechat_drafts(once: bool) -> None:

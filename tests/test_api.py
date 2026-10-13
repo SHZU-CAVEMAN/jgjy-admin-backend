@@ -98,6 +98,30 @@ def test_settings_and_dashboard(client, auth_headers):
     assert len(dashboard["latestNeeds"]) == 3
 
 
+def test_company_info_is_saved_and_visible_to_miniapp(client, auth_headers):
+    """Company settings should persist long text and feed the public miniapp API."""
+    long_scale = "企业规模与服务能力说明。" * 80
+    payload = {
+        "name": "酒谷酒业",
+        "scale": long_scale,
+        "description": "专注原酒全产业链服务。" * 80,
+        "homepage": True,
+        "address": "四川省泸州市",
+        "phone": "0830-1234567",
+        "servicePhone": "400-123-4567",
+        "email": "service@example.com",
+    }
+
+    saved = client.put("/api/company/info", headers=auth_headers, json=payload)
+
+    assert saved.status_code == 200
+    assert saved.get_json()["data"]["scale"] == long_scale
+
+    public_company = client.get("/api/miniapp/company")
+    assert public_company.status_code == 200
+    assert public_company.get_json()["data"] == payload
+
+
 def test_validation_error_is_structured(client, auth_headers):
     """Invalid payloads should include field-level validation details."""
     response = client.post(

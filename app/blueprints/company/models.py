@@ -23,7 +23,7 @@ class CompanyInfo(BaseModel):
     __tablename__ = "t_company_info"
 
     name: Mapped[str] = mapped_column(String(128), default="")
-    scale: Mapped[str] = mapped_column(String(255), default="")
+    scale: Mapped[str] = mapped_column(Text, default="")
     description: Mapped[str] = mapped_column(Text, default="")
     homepage: Mapped[bool] = mapped_column(Boolean, default=True)
     address: Mapped[str] = mapped_column(String(255), default="")
