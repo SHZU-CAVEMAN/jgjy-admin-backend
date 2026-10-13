@@ -89,6 +89,66 @@ def list_wechat_drafts(args: dict) -> dict:
         "pages": pagination.pages,
     }
 
+
+def list_public_news(args: dict) -> dict:
+    """返回小程序可展示的已发布推文分页列表。"""
+    page = max(int(args.get("page", 1)), 1)
+    page_size = min(max(int(args.get("pageSize", 20)), 1), 100)
+    statement = db.select(WechatDraft).where(
+        WechatDraft.is_deleted.is_(False),
+        WechatDraft.status == "已发布",
+    )
+    category = str(args.get("category", "")).strip()
+    if category:
+        statement = statement.where(WechatDraft.category == category)
+    pagination = db.paginate(
+        statement.order_by(WechatDraft.draft_updated_at.desc(), WechatDraft.id.desc()),
+        page=page,
+        per_page=page_size,
+        error_out=False,
+    )
+    return {
+        "items": [_serialize_public_news(draft) for draft in pagination.items],
+        "total": pagination.total,
+        "page": pagination.page,
+        "pageSize": pagination.per_page,
+        "pages": pagination.pages,
+    }
+
+
+def get_public_news(media_id: str) -> dict:
+    """返回一篇已发布推文的本地缓存正文。"""
+    draft = db.session.scalar(
+        db.select(WechatDraft).where(
+            WechatDraft.media_id == media_id,
+            WechatDraft.status == "已发布",
+            WechatDraft.is_deleted.is_(False),
+        )
+    )
+    if draft is None:
+        raise BusinessError("文章不存在或尚未发布", 404)
+    return _serialize_public_news(draft, include_content=True)
+
+
+def _serialize_public_news(draft: WechatDraft, include_content: bool = False) -> dict:
+    """将已发布草稿转换为小程序新闻结构。"""
+    news_items = json.loads(draft.content_json or draft.articles_json or "[]")
+    first_article = news_items[0] if isinstance(news_items, list) and news_items else {}
+    updated_at = draft.draft_updated_at or draft.content_synced_at
+    data = {
+        "id": draft.media_id,
+        "title": draft.title,
+        "author": draft.author,
+        "category": draft.category or "未分类",
+        "summary": draft.digest,
+        "image": draft.thumbnail_url,
+        "date": updated_at.strftime("%Y-%m-%d") if updated_at else "",
+        "updatedAt": updated_at.strftime("%Y-%m-%d %H:%M") if updated_at else "",
+    }
+    if include_content:
+        data["content"] = str(first_article.get("content", ""))
+    return data
+
 # 从公众号草稿箱拉取最新摘要并执行幂等入库
 def sync_wechat_drafts() -> dict:
     setting = get_pull_setting()

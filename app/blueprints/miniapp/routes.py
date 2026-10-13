@@ -9,7 +9,14 @@ from app.blueprints.customers.services import (
     list_public_need_categories,
     list_user_consultations,
 )
-from app.blueprints.products.services import get_public_product, list_public_products
+from app.blueprints.company.schemas import CompanyContactSchema, CompanyProfileSchema
+from app.blueprints.company.services import get_company_info
+from app.blueprints.products.services import (
+    get_public_home_summary,
+    get_public_product,
+    list_public_products,
+)
+from app.blueprints.news.services import get_public_news, list_public_news
 from app.common.exception import BusinessError
 from app.common.response import success
 
@@ -76,6 +83,36 @@ def miniapp_products():
 def miniapp_product_detail(product_id: int):
     """返回小程序产品详情。"""
     return success(get_public_product(product_id))
+
+
+@miniapp_bp.get("/home")
+def miniapp_home():
+    """返回小程序首页可展示的实时产品汇总。"""
+    return success(get_public_home_summary())
+
+
+@miniapp_bp.get("/company")
+def miniapp_company():
+    """返回小程序可公开展示的企业资料和联系方式。"""
+    info = get_company_info()
+    return success(
+        {
+            **CompanyProfileSchema().dump(info),
+            **CompanyContactSchema().dump(info),
+        }
+    )
+
+
+@miniapp_bp.get("/news")
+def miniapp_news():
+    """返回小程序可见的已发布推文列表。"""
+    return success(list_public_news(request.args.to_dict()))
+
+
+@miniapp_bp.get("/news/<string:media_id>")
+def miniapp_news_detail(media_id: str):
+    """返回小程序可见的已发布推文详情。"""
+    return success(get_public_news(media_id))
 
 
 @miniapp_bp.get("/need-categories")

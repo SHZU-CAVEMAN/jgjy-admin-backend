@@ -5,6 +5,9 @@ from unittest.mock import Mock
 
 from requests import Response
 
+from app.blueprints.news.models import WechatDraft
+from app.common.extensions import db
+
 
 def test_health(client):
     """Health endpoint should confirm database connectivity."""
@@ -291,3 +294,51 @@ def test_wechat_drafts_sync_and_content_preview(client, auth_headers, app, monke
         f"/api/news/categories/{category_id}", headers=auth_headers
     ).get_json()["data"]
     assert reverted_category["count"] == 0
+
+
+def test_miniapp_news_only_returns_published_drafts(client, app):
+    """Mini-program news should only expose locally published draft content."""
+    with app.app_context():
+        db.session.add_all(
+            [
+                WechatDraft(
+                    media_id="published-news",
+                    title="已发布文章",
+                    author="编辑",
+                    category="新闻动态",
+                    digest="文章摘要",
+                    status="已发布",
+                    thumbnail_url="https://example.com/cover.jpg",
+                    content_json='[{"content": "<p>文章正文</p>"}]',
+                ),
+                WechatDraft(
+                    media_id="draft-news",
+                    title="未发布文章",
+                    status="草稿",
+                ),
+            ]
+        )
+        db.session.commit()
+
+    listing = client.get("/api/miniapp/news")
+    assert listing.status_code == 200
+    assert listing.get_json()["data"]["total"] == 1
+    assert listing.get_json()["data"]["items"][0]["id"] == "published-news"
+
+    detail = client.get("/api/miniapp/news/published-news")
+    assert detail.status_code == 200
+    assert detail.get_json()["data"]["content"] == "<p>文章正文</p>"
+
+    hidden = client.get("/api/miniapp/news/draft-news")
+    assert hidden.status_code == 404
+
+
+def test_miniapp_home_and_company_are_public(client):
+    """Mini-program home summary and company profile should be publicly readable."""
+    home = client.get("/api/miniapp/home")
+    assert home.status_code == 200
+    assert "totalTons" in home.get_json()["data"]
+
+    company = client.get("/api/miniapp/company")
+    assert company.status_code == 200
+    assert "name" in company.get_json()["data"]

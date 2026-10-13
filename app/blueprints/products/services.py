@@ -7,7 +7,7 @@ from uuid import uuid4
 
 from flask import current_app
 from PIL import Image, ImageOps, UnidentifiedImageError
-from sqlalchemy import or_
+from sqlalchemy import func, or_
 from werkzeug.datastructures import FileStorage
 
 from app.common.crud import CrudService
@@ -167,6 +167,34 @@ def get_public_product(product_id: int) -> dict[str, Any]:
     if product is None or product.is_deleted or product.status != "上架":
         raise BusinessError("产品不存在或已下架", 404)
     return _serialize_public_product(product)
+
+
+def get_public_home_summary() -> dict[str, Any]:
+    """汇总小程序首页展示所需的上架产品库存数据。"""
+    visible_products = db.select(Product).where(
+        Product.is_deleted.is_(False),
+        Product.status == "上架",
+    )
+    total_tons = db.session.scalar(
+        db.select(func.coalesce(func.sum(Product.tons), 0)).where(
+            Product.is_deleted.is_(False),
+            Product.status == "上架",
+        )
+    )
+    product_count = db.session.scalar(
+        db.select(func.count(Product.id)).where(
+            Product.is_deleted.is_(False),
+            Product.status == "上架",
+        )
+    )
+    products = db.session.scalars(
+        visible_products.order_by(Product.id.desc()).limit(3)
+    ).all()
+    return {
+        "totalTons": int(total_tons or 0),
+        "productCount": int(product_count or 0),
+        "latestProducts": [_serialize_public_product(product) for product in products],
+    }
 
 
 def _serialize_public_product(product: Product) -> dict[str, Any]:
