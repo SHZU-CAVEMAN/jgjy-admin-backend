@@ -101,15 +101,21 @@ def sync_wechat_drafts() -> dict:
         raise BusinessError("微信公众号草稿箱返回格式无效", 502)
 
     synced_count = 0
+    skipped_published_count = 0
     for item in records:
         media_id = item.get("media_id")
-        news_items = item.get("content", {}).get("news_item", [])
-        if not media_id or not isinstance(news_items, list):
+        if not media_id:
             continue
-        first_article = news_items[0] if news_items else {}
         draft = db.session.scalar(
             db.select(WechatDraft).where(WechatDraft.media_id == media_id)
         )
+        if draft is not None and draft.status == "已发布":
+            skipped_published_count += 1
+            continue
+        news_items = item.get("content", {}).get("news_item", [])
+        if not isinstance(news_items, list):
+            continue
+        first_article = news_items[0] if news_items else {}
         if draft is None:
             draft = WechatDraft(media_id=media_id)
             db.session.add(draft)
@@ -132,6 +138,7 @@ def sync_wechat_drafts() -> dict:
         "synced": synced_count,
         "total": payload.get("total_count", synced_count),
         "itemCount": payload.get("item_count", synced_count),
+        "skippedPublished": skipped_published_count,
     }
 
 # 返回草稿正文；本地未缓存时从微信获取并持久化

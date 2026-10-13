@@ -240,17 +240,6 @@ def test_wechat_drafts_sync_and_content_preview(client, auth_headers, app, monke
     ).get_json()["data"]
     assert published_category["count"] == 1
 
-    reverted = client.patch(
-        "/api/news/drafts/draft-media-id",
-        headers=auth_headers,
-        json={"status": "草稿"},
-    )
-    assert reverted.status_code == 200
-    reverted_category = client.get(
-        f"/api/news/categories/{category_id}", headers=auth_headers
-    ).get_json()["data"]
-    assert reverted_category["count"] == 0
-
     invalid_category = client.patch(
         "/api/news/drafts/draft-media-id",
         headers=auth_headers,
@@ -279,8 +268,11 @@ def test_wechat_drafts_sync_and_content_preview(client, auth_headers, app, monke
 
     refreshed = client.post("/api/news/drafts/sync", headers=auth_headers)
     assert refreshed.status_code == 200
+    assert refreshed.get_json()["data"]["synced"] == 0
+    assert refreshed.get_json()["data"]["skippedPublished"] == 1
     refreshed_draft = client.get("/api/news/drafts", headers=auth_headers).get_json()["data"]["items"][0]
-    assert refreshed_draft["contentSyncedAt"] is None
+    assert refreshed_draft["title"] == "已编辑草稿"
+    assert refreshed_draft["contentSyncedAt"] is not None
     assert refreshed_draft["status"] == "已发布"
 
     refreshed_content = client.get(
@@ -288,4 +280,15 @@ def test_wechat_drafts_sync_and_content_preview(client, auth_headers, app, monke
     )
     assert refreshed_content.status_code == 200
     assert refreshed_content.get_json()["data"]["articles"][0]["content"] == "<p>测试正文</p>"
-    assert post.call_count == 4
+    assert post.call_count == 3
+
+    reverted = client.patch(
+        "/api/news/drafts/draft-media-id",
+        headers=auth_headers,
+        json={"status": "草稿"},
+    )
+    assert reverted.status_code == 200
+    reverted_category = client.get(
+        f"/api/news/categories/{category_id}", headers=auth_headers
+    ).get_json()["data"]
+    assert reverted_category["count"] == 0
