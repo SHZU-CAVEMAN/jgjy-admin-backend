@@ -51,6 +51,7 @@ class WechatDraft(BaseModel):
     title: Mapped[str] = mapped_column(String(255), default="")
     author: Mapped[str] = mapped_column(String(128), default="")
     category: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    status: Mapped[str] = mapped_column(String(16), default="草稿")
     digest: Mapped[str] = mapped_column(Text, default="")
     thumbnail_url: Mapped[str] = mapped_column(String(1024), default="")
     draft_created_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)

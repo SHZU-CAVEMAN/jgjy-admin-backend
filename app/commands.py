@@ -36,19 +36,28 @@ def register_commands(app: Flask) -> None:
         click.echo("Database initialized.")
 
     @app.cli.command("upgrade-news-draft-schema")
-    # 为已有草稿表补齐推文分类字段
+    # 为已有草稿表补齐后台编辑需要的字段
     def upgrade_news_draft_schema() -> None:
         columns = {
             column["name"] for column in inspect(db.engine).get_columns(WechatDraft.__tablename__)
         }
-        if "category" in columns:
+        additions = {
+            "category": "VARCHAR(64)",
+            "status": "VARCHAR(16) NOT NULL DEFAULT '草稿'",
+        }
+        missing_columns = [name for name in additions if name not in columns]
+        if not missing_columns:
             click.echo("Wechat draft schema is already up to date.")
             return
-        db.session.execute(
-            text(f"ALTER TABLE {WechatDraft.__tablename__} ADD COLUMN category VARCHAR(64)")
-        )
+        for name in missing_columns:
+            db.session.execute(
+                text(
+                    f"ALTER TABLE {WechatDraft.__tablename__} "
+                    f"ADD COLUMN {name} {additions[name]}"
+                )
+            )
         db.session.commit()
-        click.echo("Wechat draft category column added.")
+        click.echo(f"Wechat draft columns added: {', '.join(missing_columns)}.")
 
     @app.cli.command("sync-wechat-drafts")
     @click.option("--once", is_flag=True, help="Sync once and exit.")

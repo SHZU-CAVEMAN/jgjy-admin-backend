@@ -59,6 +59,7 @@ class WechatDraftSchema(KeyedSchema):
     title = fields.String()
     author = fields.String()
     category = fields.String(allow_none=True)
+    status = fields.String(validate=validate.OneOf(["草稿", "已发布"]))
     digest = fields.String()
     thumbnail_url = fields.String(data_key="thumbnailUrl")
     draft_created_at = fields.DateTime(
@@ -78,6 +79,7 @@ class WechatDraftUpdateSchema(Schema):
     title = fields.String(validate=validate.Length(min=1, max=255))
     author = fields.String(validate=validate.Length(max=128))
     category = fields.String(allow_none=True, validate=validate.Length(min=1, max=64))
+    status = fields.String(validate=validate.OneOf(["草稿", "已发布"]))
     digest = fields.String(validate=validate.Length(max=65535))
 
 

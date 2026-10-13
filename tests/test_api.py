@@ -222,6 +222,7 @@ def test_wechat_drafts_sync_and_content_preview(client, auth_headers, app, monke
             "title": "已编辑草稿",
             "author": "新编辑",
             "category": "测试草稿分类",
+            "status": "已发布",
             "digest": "已编辑摘要",
         },
     )
@@ -231,6 +232,7 @@ def test_wechat_drafts_sync_and_content_preview(client, auth_headers, app, monke
     assert updated_data["title"] == "已编辑草稿"
     assert updated_data["author"] == "新编辑"
     assert updated_data["category"] == "测试草稿分类"
+    assert updated_data["status"] == "已发布"
     assert updated_data["digest"] == "已编辑摘要"
 
     invalid_category = client.patch(
@@ -263,6 +265,7 @@ def test_wechat_drafts_sync_and_content_preview(client, auth_headers, app, monke
     assert refreshed.status_code == 200
     refreshed_draft = client.get("/api/news/drafts", headers=auth_headers).get_json()["data"]["items"][0]
     assert refreshed_draft["contentSyncedAt"] is None
+    assert refreshed_draft["status"] == "已发布"
 
     refreshed_content = client.get(
         "/api/news/drafts/draft-media-id/content", headers=auth_headers
