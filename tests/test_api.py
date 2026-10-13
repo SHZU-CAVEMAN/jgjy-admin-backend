@@ -170,6 +170,7 @@ def test_wechat_drafts_sync_and_content_preview(client, auth_headers, app, monke
                             "author": "编辑",
                             "digest": "测试摘要",
                             "thumb_url": "https://example.com/cover.jpg",
+                            "content": "<p>测试正文</p>",
                         }
                     ],
                 },
@@ -177,13 +178,7 @@ def test_wechat_drafts_sync_and_content_preview(client, auth_headers, app, monke
             }
         ],
     }, ensure_ascii=False).encode("utf-8")
-    detail_response = Response()
-    detail_response.status_code = 200
-    detail_response.encoding = "latin-1"
-    detail_response._content = json.dumps({
-        "news_item": [{"title": "测试草稿", "content": "<p>测试正文</p>"}]
-    }, ensure_ascii=False).encode("utf-8")
-    post = Mock(side_effect=[list_response, detail_response, list_response, detail_response])
+    post = Mock(side_effect=[list_response, list_response])
     get = Mock(return_value=token_response)
     fake_redis = FakeRedis()
     monkeypatch.setattr("app.blueprints.news.services.requests.post", post)
@@ -193,7 +188,7 @@ def test_wechat_drafts_sync_and_content_preview(client, auth_headers, app, monke
     synced = client.post("/api/news/drafts/sync", headers=auth_headers)
     assert synced.status_code == 200
     assert synced.get_json()["data"]["synced"] == 1
-    assert post.call_args_list[0].kwargs["json"]["no_content"] == 1
+    assert post.call_args_list[0].kwargs["json"]["no_content"] == 0
     assert get.call_args.kwargs["params"] == {
         "grant_type": "client_credential",
         "appid": "test-appid",
@@ -251,7 +246,7 @@ def test_wechat_drafts_sync_and_content_preview(client, auth_headers, app, monke
     item = drafts.get_json()["data"]["items"][0]
     assert item["mediaId"] == "draft-media-id"
     assert item["title"] == "已编辑草稿"
-    assert item["contentSyncedAt"] is None
+    assert item["contentSyncedAt"] is not None
 
     content = client.get(
         "/api/news/drafts/draft-media-id/content", headers=auth_headers
@@ -263,7 +258,7 @@ def test_wechat_drafts_sync_and_content_preview(client, auth_headers, app, monke
         "/api/news/drafts/draft-media-id/content", headers=auth_headers
     )
     assert cached_content.status_code == 200
-    assert post.call_count == 2
+    assert post.call_count == 1
     assert get.call_count == 1
 
     refreshed = client.post("/api/news/drafts/sync", headers=auth_headers)
@@ -280,7 +275,11 @@ def test_wechat_drafts_sync_and_content_preview(client, auth_headers, app, monke
     )
     assert refreshed_content.status_code == 200
     assert refreshed_content.get_json()["data"]["articles"][0]["content"] == "<p>测试正文</p>"
-    assert post.call_count == 3
+    assert post.call_count == 2
+    assert all(
+        call.args[0].endswith("/cgi-bin/draft/batchget")
+        for call in post.call_args_list
+    )
 
     reverted = client.patch(
         "/api/news/drafts/draft-media-id",

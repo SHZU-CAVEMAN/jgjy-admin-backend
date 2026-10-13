@@ -94,7 +94,7 @@ def sync_wechat_drafts() -> dict:
     setting = get_pull_setting()
     payload = _wechat_post(
         "/cgi-bin/draft/batchget",
-        {"offset": 0, "count": setting.count, "no_content": 1},
+        {"offset": 0, "count": setting.count, "no_content": 0},
     )
     records = payload.get("item", [])
     if not isinstance(records, list):
@@ -130,8 +130,8 @@ def sync_wechat_drafts() -> dict:
             item.get("update_time") or item.get("content", {}).get("update_time")
         )
         draft.articles_json = json.dumps(news_items, ensure_ascii=False)
-        draft.content_json = None
-        draft.content_synced_at = None
+        draft.content_json = json.dumps(news_items, ensure_ascii=False)
+        draft.content_synced_at = datetime.now()
         synced_count += 1
     db.session.commit()
     return {
