@@ -208,12 +208,12 @@ def test_wechat_drafts_sync_and_content_preview(client, auth_headers, app, monke
         headers=auth_headers,
         json={
             "name": "测试草稿分类",
-            "count": 0,
-            "updated": "2026-10-09",
             "status": "启用",
         },
     )
     assert category.status_code == 201
+    category_id = category.get_json()["data"]["id"]
+    assert category.get_json()["data"]["count"] == 0
 
     updated = client.patch(
         "/api/news/drafts/draft-media-id",
@@ -234,6 +234,22 @@ def test_wechat_drafts_sync_and_content_preview(client, auth_headers, app, monke
     assert updated_data["category"] == "测试草稿分类"
     assert updated_data["status"] == "已发布"
     assert updated_data["digest"] == "已编辑摘要"
+
+    published_category = client.get(
+        f"/api/news/categories/{category_id}", headers=auth_headers
+    ).get_json()["data"]
+    assert published_category["count"] == 1
+
+    reverted = client.patch(
+        "/api/news/drafts/draft-media-id",
+        headers=auth_headers,
+        json={"status": "草稿"},
+    )
+    assert reverted.status_code == 200
+    reverted_category = client.get(
+        f"/api/news/categories/{category_id}", headers=auth_headers
+    ).get_json()["data"]
+    assert reverted_category["count"] == 0
 
     invalid_category = client.patch(
         "/api/news/drafts/draft-media-id",

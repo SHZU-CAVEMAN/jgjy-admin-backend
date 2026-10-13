@@ -26,8 +26,8 @@ class NewsCategorySchema(KeyedSchema):
     """校验并序列化推文分类。"""
 
     name = fields.String(required=True, validate=validate.Length(min=1, max=64))
-    count = fields.Integer(load_default=0, validate=validate.Range(min=0))
-    updated = fields.Date(required=True)
+    count = fields.Integer(dump_only=True)
+    updated = fields.Date(dump_only=True)
     status = fields.String(
         load_default="启用",
         validate=validate.OneOf(["启用", "停用"]),

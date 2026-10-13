@@ -1,7 +1,7 @@
 # 新闻业务域服务
 
 import json
-from datetime import datetime
+from datetime import date, datetime
 
 import requests
 from flask import current_app
@@ -167,11 +167,16 @@ def update_wechat_draft(media_id: str, payload: dict) -> WechatDraft:
     if draft is None:
         raise BusinessError("草稿不存在，请先同步草稿列表", 404)
     data = WechatDraftUpdateSchema().load(payload, partial=True)
-    category = data.get("category")
-    if category is not None:
+    previous_category = draft.category
+    previous_status = draft.status
+    next_category = data.get("category", previous_category)
+    next_status = data.get("status", previous_status)
+    if next_status == "已发布" and not next_category:
+        raise BusinessError("发布推文前请选择分类", 422)
+    if "category" in data:
         active_category = db.session.scalar(
             db.select(NewsCategory).where(
-                NewsCategory.name == category,
+                NewsCategory.name == next_category,
                 NewsCategory.status == "启用",
                 NewsCategory.is_deleted.is_(False),
             )
@@ -180,8 +185,45 @@ def update_wechat_draft(media_id: str, payload: dict) -> WechatDraft:
             raise BusinessError("所选推文分类不存在或已停用", 422)
     for key, value in data.items():
         setattr(draft, key, value)
+    _update_category_statistics(
+        previous_category,
+        previous_status,
+        next_category,
+        next_status,
+    )
     db.session.commit()
     return draft
+
+
+def _update_category_statistics(
+    previous_category: str | None,
+    previous_status: str,
+    next_category: str | None,
+    next_status: str,
+) -> None:
+    """按草稿的发布状态和分类变化维护分类统计。"""
+    if previous_status == "已发布" and previous_category:
+        if next_status != "已发布" or previous_category != next_category:
+            category = db.session.scalar(
+                db.select(NewsCategory).where(
+                    NewsCategory.name == previous_category,
+                    NewsCategory.is_deleted.is_(False),
+                )
+            )
+            if category is not None:
+                category.count = max(category.count - 1, 0)
+                category.updated = date.today()
+    if next_status == "已发布" and next_category:
+        if previous_status != "已发布" or previous_category != next_category:
+            category = db.session.scalar(
+                db.select(NewsCategory).where(
+                    NewsCategory.name == next_category,
+                    NewsCategory.is_deleted.is_(False),
+                )
+            )
+            if category is not None:
+                category.count += 1
+                category.updated = date.today()
 
 # 发送微信公众号接口请求并标准化上游失败
 def _wechat_post(path: str, payload: dict) -> dict:

@@ -26,7 +26,7 @@ class NewsCategory(BaseModel):
 
     name: Mapped[str] = mapped_column(String(64))
     count: Mapped[int] = mapped_column(Integer, default=0)
-    updated: Mapped[date] = mapped_column(Date)
+    updated: Mapped[date] = mapped_column(Date, default=date.today)
     status: Mapped[str] = mapped_column(String(16), default="启用")
 
 
