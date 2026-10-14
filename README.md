@@ -149,12 +149,15 @@ mysql+pymysql://user:password@127.0.0.1:3306/jgjy?charset=utf8mb4
 | 需求、收藏、客户信息 | `/api/customers/needs`、`/api/customers/favorites`、`/api/customers/info` |
 | 小程序用户统计 | `/api/customers/miniapp-users` |
 | 小程序手机号登录、当前用户 | `/api/miniapp/auth/phone-login`、`/api/miniapp/auth/me` |
+| 小程序收藏、咨询和留言 | `/api/miniapp/favorites`、`/api/miniapp/consultations`、`/api/miniapp/my-comments`、`/api/miniapp/news/{mediaId}/comments` |
 | 产品分类、产品、溯源 | `/api/products/categories`、`/api/products/list`、`/api/products/traceability` |
 | 拉取设置、推文分类、推文、互动 | `/api/news/pull-settings`、`/api/news/categories`、`/api/news/articles`、`/api/news/interactions` |
 
 CRUD 列表支持 `page`、`pageSize`、`keyword`，以及前端页面对应的 `status`、`method`、`type`、`category` 筛选参数。
 
 管理后台与小程序使用不同类型的 JWT，令牌不能跨端调用。`WECHAT_MINIAPP_SECRET` 只允许保存在服务端环境变量中。
+
+部署升级小程序收藏、咨询和文章留言的用户关联字段时，先备份数据库，再在后端目录执行 `flask upgrade-miniapp-engagement-schema`。新产生的收藏、咨询和留言均通过登录用户 ID 关联；无法可靠识别所属用户的历史收藏/互动会保留为未关联记录。
 
 ## 测试
 

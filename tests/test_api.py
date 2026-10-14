@@ -4,9 +4,13 @@ import json
 from unittest.mock import Mock
 
 from requests import Response
+from flask_jwt_extended import create_access_token
 from sqlalchemy import text
 
+from app.blueprints.customers.models import NeedCategory
+from app.blueprints.miniapp.models import MiniAppUser
 from app.blueprints.news.models import NewsCategory, WechatDraft
+from app.blueprints.products.models import Product
 from app.common.extensions import db
 
 
@@ -100,11 +104,9 @@ def test_settings_and_dashboard(client, auth_headers):
 
 
 def test_company_info_is_saved_and_visible_to_miniapp(client, auth_headers):
-    """Company settings should persist long text and feed the public miniapp API."""
-    long_scale = "企业规模与服务能力说明。" * 80
+    """Company settings should persist the introduction and feed the miniapp API."""
     payload = {
         "name": "酒谷酒业",
-        "scale": long_scale,
         "description": "专注原酒全产业链服务。" * 80,
         "homepage": True,
         "address": "四川省泸州市",
@@ -116,7 +118,7 @@ def test_company_info_is_saved_and_visible_to_miniapp(client, auth_headers):
     saved = client.put("/api/company/info", headers=auth_headers, json=payload)
 
     assert saved.status_code == 200
-    assert saved.get_json()["data"]["scale"] == long_scale
+    assert "scale" not in saved.get_json()["data"]
 
     public_company = client.get("/api/miniapp/company")
     assert public_company.status_code == 200
@@ -379,6 +381,205 @@ def test_miniapp_news_only_returns_published_drafts(client, app):
 
     hidden = client.get("/api/miniapp/news/draft-news")
     assert hidden.status_code == 404
+
+
+def test_miniapp_engagement_is_linked_to_current_user(client, app, auth_headers):
+    """Favorites, consultations, and comments should be user-owned records."""
+    with app.app_context():
+        first_user = MiniAppUser(
+            openid="engagement-user-one",
+            phone_number="13800000001",
+            nickname="留言用户一",
+        )
+        second_user = MiniAppUser(
+            openid="engagement-user-two",
+            phone_number="13800000002",
+            nickname="留言用户二",
+        )
+        category = NeedCategory(name="接口测试咨询分类", status="启用")
+        product = Product(
+            name="接口测试产品",
+            category="酱香白酒",
+            spec="500ml",
+            price="¥100",
+            status="上架",
+        )
+        draft = WechatDraft(
+            media_id="engagement-news-id",
+            title="接口测试文章",
+            status="已发布",
+        )
+        db.session.add_all([first_user, second_user, category, product, draft])
+        db.session.commit()
+        first_user_id = first_user.id
+        second_user_id = second_user.id
+        category_id = category.id
+        product_id = product.id
+        first_token = create_access_token(
+            identity=str(first_user_id), additional_claims={"user_type": "miniapp"}
+        )
+        second_token = create_access_token(
+            identity=str(second_user_id), additional_claims={"user_type": "miniapp"}
+        )
+    first_headers = {"Authorization": f"Bearer {first_token}"}
+    second_headers = {"Authorization": f"Bearer {second_token}"}
+
+    favorite = client.post(
+        "/api/miniapp/favorites/toggle",
+        headers=first_headers,
+        json={"type": "产品", "targetId": str(product_id)},
+    )
+    assert favorite.status_code == 200
+    assert favorite.get_json()["data"]["collected"] is True
+    first_favorites = client.get(
+        "/api/miniapp/favorites", headers=first_headers
+    ).get_json()["data"]
+    assert len(first_favorites) == 1
+    assert first_favorites[0]["miniappUserId"] == first_user_id
+    assert first_favorites[0]["targetId"] == str(product_id)
+    assert first_favorites[0]["item"]["name"] == "接口测试产品"
+    assert client.get(
+        "/api/miniapp/favorites", headers=second_headers
+    ).get_json()["data"] == []
+
+    article_favorite = client.post(
+        "/api/miniapp/favorites/toggle",
+        headers=first_headers,
+        json={"type": "推文", "targetId": "engagement-news-id"},
+    )
+    assert article_favorite.status_code == 200
+    first_favorites = client.get(
+        "/api/miniapp/favorites", headers=first_headers
+    ).get_json()["data"]
+    saved_article = next(item for item in first_favorites if item["type"] == "推文")
+    assert saved_article["item"]["title"] == "接口测试文章"
+
+    consultation = client.post(
+        "/api/miniapp/consultations",
+        headers=first_headers,
+        json={
+            "name": "留言用户一",
+            "phone": "13800000001",
+            "categoryId": category_id,
+            "remark": "用户关联测试",
+        },
+    )
+    assert consultation.status_code == 201
+    assert consultation.get_json()["data"]["miniappUserId"] == first_user_id
+    admin_needs = client.get(
+        "/api/customers/needs?keyword=留言用户一", headers=auth_headers
+    ).get_json()["data"]["items"]
+    saved_consultation = next(
+        item for item in admin_needs if item["name"] == "留言用户一"
+    )
+    assert saved_consultation["miniappUserId"] == first_user_id
+    assert saved_consultation["openid"] == "engagement-user-one"
+    assert client.get(
+        "/api/miniapp/consultations", headers=second_headers
+    ).get_json()["data"] == []
+
+    comment = client.post(
+        "/api/miniapp/news/engagement-news-id/comments",
+        headers=first_headers,
+        json={"content": "真实接口留言"},
+    )
+    assert comment.status_code == 201
+    assert comment.get_json()["data"]["articleId"] == "engagement-news-id"
+    assert client.get(
+        "/api/miniapp/my-comments", headers=second_headers
+    ).get_json()["data"] == []
+    my_comments = client.get(
+        "/api/miniapp/my-comments", headers=first_headers
+    ).get_json()["data"]
+    assert len(my_comments) == 1
+    assert my_comments[0]["content"] == "真实接口留言"
+    assert my_comments[0]["miniappUserId"] == first_user_id
+
+    public_comments = client.get(
+        "/api/miniapp/news/engagement-news-id/comments"
+    ).get_json()["data"]
+    assert len(public_comments) == 1
+    assert public_comments[0]["name"] == "留言用户一"
+
+    admin_favorites = client.get(
+        "/api/customers/favorites", headers=auth_headers
+    ).get_json()["data"]["items"]
+    saved_favorite = next(
+        item for item in admin_favorites if item.get("targetId") == str(product_id)
+    )
+    assert saved_favorite["openid"] == "engagement-user-one"
+
+    admin_interactions = client.get(
+        "/api/news/interactions?type=留言", headers=auth_headers
+    ).get_json()["data"]["items"]
+    saved_comment = next(
+        item for item in admin_interactions
+        if item.get("articleId") == "engagement-news-id"
+    )
+    assert saved_comment["miniappUserId"] == first_user_id
+    assert saved_comment["openid"] == "engagement-user-one"
+
+
+def test_upgrade_miniapp_engagement_schema_adds_user_links(app):
+    """The engagement upgrade should add missing user and target columns."""
+    legacy_tables = {
+        "t_customer_need": """
+            CREATE TABLE t_customer_need (
+                id INTEGER PRIMARY KEY, create_time DATETIME NOT NULL,
+                update_time DATETIME NOT NULL, is_deleted BOOLEAN NOT NULL,
+                category_id INTEGER, name VARCHAR(128) NOT NULL,
+                phone VARCHAR(32) NOT NULL, category VARCHAR(64) NOT NULL,
+                method VARCHAR(32) NOT NULL, region VARCHAR(128) NOT NULL,
+                budget VARCHAR(64) NOT NULL, content TEXT NOT NULL,
+                submitted_at DATETIME NOT NULL, status VARCHAR(16) NOT NULL
+            )
+        """,
+        "t_customer_favorite": """
+            CREATE TABLE t_customer_favorite (
+                id INTEGER PRIMARY KEY, create_time DATETIME NOT NULL,
+                update_time DATETIME NOT NULL, is_deleted BOOLEAN NOT NULL,
+                customer VARCHAR(128) NOT NULL, content VARCHAR(255) NOT NULL,
+                type VARCHAR(16) NOT NULL, favorited_at DATETIME NOT NULL
+            )
+        """,
+        "t_news_interaction": """
+            CREATE TABLE t_news_interaction (
+                id INTEGER PRIMARY KEY, create_time DATETIME NOT NULL,
+                update_time DATETIME NOT NULL, is_deleted BOOLEAN NOT NULL,
+                user VARCHAR(128) NOT NULL, article VARCHAR(255) NOT NULL,
+                type VARCHAR(16) NOT NULL, interacted_at DATETIME NOT NULL,
+                comment TEXT NOT NULL
+            )
+        """,
+    }
+    with app.app_context():
+        for table_name, create_sql in legacy_tables.items():
+            db.session.execute(text(f"DROP TABLE {table_name}"))
+            db.session.execute(text(create_sql))
+        db.session.commit()
+
+    runner = app.test_cli_runner()
+    first_run = runner.invoke(args=["upgrade-miniapp-engagement-schema"])
+    assert first_run.exit_code == 0, first_run.output
+    second_run = runner.invoke(args=["upgrade-miniapp-engagement-schema"])
+    assert second_run.exit_code == 0, second_run.output
+
+    with app.app_context():
+        inspector = db.inspect(db.engine)
+        assert "miniapp_user_id" in {
+            column["name"] for column in inspector.get_columns("t_customer_need")
+        }
+        assert {"miniapp_user_id", "target_id"} <= {
+            column["name"] for column in inspector.get_columns("t_customer_favorite")
+        }
+        assert {"miniapp_user_id", "article_id"} <= {
+            column["name"] for column in inspector.get_columns("t_news_interaction")
+        }
+        for table_name in legacy_tables:
+            assert any(
+                index.get("column_names") == ["miniapp_user_id"]
+                for index in inspector.get_indexes(table_name)
+            )
 
 
 def test_upgrade_news_draft_schema_backfills_category_id(app):

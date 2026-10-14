@@ -21,7 +21,6 @@ class CompanyProfileSchema(Schema):
     """校验并序列化企业资料设置。"""
 
     name = fields.String(required=True, validate=validate.Length(min=1, max=128))
-    scale = fields.String(required=True, validate=validate.Length(min=1))
     description = fields.String(required=True, validate=validate.Length(min=1))
     homepage = fields.Boolean(required=True)
 

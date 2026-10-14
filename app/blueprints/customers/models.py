@@ -52,10 +52,15 @@ class Favorite(BaseModel):
 
     __tablename__ = "t_customer_favorite"
 
+    miniapp_user_id: Mapped[int | None] = mapped_column(
+        ForeignKey("t_miniapp_user.id"), nullable=True, index=True
+    )
     customer: Mapped[str] = mapped_column(String(128))
     content: Mapped[str] = mapped_column(String(255))
     type: Mapped[str] = mapped_column(String(16))
+    target_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
     favorited_at: Mapped[datetime] = mapped_column(DateTime)
+    miniapp_user = relationship("MiniAppUser", lazy="joined")
 
 
 class Customer(BaseModel):

@@ -92,6 +92,10 @@ class WechatDraftUpdateSchema(Schema):
 class InteractionSchema(KeyedSchema):
     """校验并序列化推文互动。"""
 
+    miniapp_user_id = fields.Integer(data_key="miniappUserId", dump_only=True)
+    article_id = fields.String(data_key="articleId", dump_only=True, allow_none=True)
+    openid = fields.Method(serialize="get_openid", dump_only=True)
+    phone_number = fields.Method(data_key="phoneNumber", serialize="get_phone_number", dump_only=True)
     user = fields.String(required=True, validate=validate.Length(min=1, max=128))
     article = fields.String(required=True, validate=validate.Length(min=1, max=255))
     type = fields.String(
@@ -104,3 +108,17 @@ class InteractionSchema(KeyedSchema):
         required=True,
     )
     comment = fields.String(load_default="-")
+
+    def get_openid(self, interaction) -> str:
+        """返回关联小程序用户的 OpenID。"""
+        return interaction.miniapp_user.openid if interaction.miniapp_user else ""
+
+    def get_phone_number(self, interaction) -> str:
+        """返回关联小程序用户手机号。"""
+        return interaction.miniapp_user.phone_number if interaction.miniapp_user else ""
+
+
+class ArticleCommentCreateSchema(Schema):
+    """校验小程序文章留言。"""
+
+    content = fields.String(required=True, validate=validate.Length(min=1, max=200))

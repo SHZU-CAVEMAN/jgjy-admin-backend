@@ -9,6 +9,7 @@ from redis.exceptions import RedisError
 from sqlalchemy import or_
 from sqlalchemy.orm import joinedload
 
+from app.blueprints.miniapp.models import MiniAppUser
 from app.common.crud import CrudService
 from app.common.exception import BusinessError
 from app.common.extensions import db
@@ -17,6 +18,7 @@ from app.common.redis_client import get_redis, prefixed_key
 from .models import Article, Interaction, NewsCategory, PullSetting, WechatDraft
 from .schemas import (
     ArticleSchema,
+    ArticleCommentCreateSchema,
     InteractionSchema,
     NewsCategorySchema,
     PullSettingSchema,
@@ -142,6 +144,88 @@ def get_public_news(media_id: str) -> dict:
     if draft is None:
         raise BusinessError("文章不存在或尚未发布", 404)
     return _serialize_public_news(draft, include_content=True)
+
+
+def list_article_comments(media_id: str) -> list[dict]:
+    """返回已发布文章关联的小程序留言。"""
+    draft = db.session.scalar(
+        db.select(WechatDraft).where(
+            WechatDraft.media_id == media_id,
+            WechatDraft.status == "已发布",
+            WechatDraft.is_deleted.is_(False),
+        )
+    )
+    if draft is None:
+        raise BusinessError("文章不存在或尚未发布", 404)
+    comments = db.session.scalars(
+        db.select(Interaction)
+        .where(
+            Interaction.article_id == media_id,
+            Interaction.type == "留言",
+            Interaction.miniapp_user_id.is_not(None),
+            Interaction.is_deleted.is_(False),
+        )
+        .order_by(Interaction.interacted_at.desc(), Interaction.id.desc())
+    ).all()
+    return [_serialize_user_comment(comment) for comment in comments]
+
+
+def create_article_comment(
+    user_id: int, media_id: str, payload: dict
+) -> dict:
+    """创建并关联当前小程序用户的文章留言。"""
+    data = ArticleCommentCreateSchema().load(payload)
+    user = db.session.get(MiniAppUser, user_id)
+    if user is None or user.is_deleted or not user.is_active:
+        raise BusinessError("小程序用户不存在或已停用", 401)
+    draft = db.session.scalar(
+        db.select(WechatDraft).where(
+            WechatDraft.media_id == media_id,
+            WechatDraft.status == "已发布",
+            WechatDraft.is_deleted.is_(False),
+        )
+    )
+    if draft is None:
+        raise BusinessError("文章不存在或尚未发布", 404)
+    comment = Interaction(
+        miniapp_user_id=user.id,
+        user=user.nickname or user.phone_number,
+        article=draft.title,
+        article_id=draft.media_id,
+        type="留言",
+        interacted_at=datetime.now(),
+        comment=data["content"],
+    )
+    db.session.add(comment)
+    db.session.commit()
+    return _serialize_user_comment(comment)
+
+
+def list_user_comments(user_id: int) -> list[dict]:
+    """返回当前小程序用户自己的文章留言。"""
+    comments = db.session.scalars(
+        db.select(Interaction)
+        .where(
+            Interaction.miniapp_user_id == user_id,
+            Interaction.type == "留言",
+            Interaction.is_deleted.is_(False),
+        )
+        .order_by(Interaction.interacted_at.desc(), Interaction.id.desc())
+    ).all()
+    return [_serialize_user_comment(comment) for comment in comments]
+
+
+def _serialize_user_comment(comment: Interaction) -> dict:
+    """将留言转换为文章详情和个人留言页共用结构。"""
+    return {
+        "id": comment.id,
+        "miniappUserId": comment.miniapp_user_id,
+        "articleId": comment.article_id,
+        "articleTitle": comment.article,
+        "content": comment.comment,
+        "name": comment.miniapp_user.nickname if comment.miniapp_user else comment.user,
+        "date": comment.interacted_at.strftime("%Y-%m-%d %H:%M"),
+    }
 
 
 def _serialize_public_news(draft: WechatDraft, include_content: bool = False) -> dict:

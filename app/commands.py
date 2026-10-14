@@ -12,6 +12,7 @@ from sqlalchemy import inspect, text
 from app.blueprints.auth.models import AdminUser
 from app.blueprints.company.models import CompanyInfo, Honor
 from app.blueprints.customers.models import Customer, CustomerNeed, Favorite, NeedCategory
+from app.blueprints.miniapp.models import MiniAppUser
 from app.blueprints.news.models import (
     Article,
     Interaction,
@@ -101,28 +102,71 @@ def register_commands(app: Flask) -> None:
         else:
             click.echo("Wechat draft schema is already up to date.")
 
-    @app.cli.command("upgrade-company-info-schema")
-    def upgrade_company_info_schema() -> None:
-        """将企业规模字段升级为长文本类型。"""
-        columns = {
-            column["name"]: column
-            for column in inspect(db.engine).get_columns(CompanyInfo.__tablename__)
+    @app.cli.command("upgrade-miniapp-engagement-schema")
+    def upgrade_miniapp_engagement_schema() -> None:
+        """为收藏和推文留言增加小程序用户及目标关联字段。"""
+        additions = {
+            CustomerNeed.__tablename__: {"miniapp_user_id": "INTEGER NULL"},
+            Favorite.__tablename__: {
+                "miniapp_user_id": "INTEGER NULL",
+                "target_id": "VARCHAR(128) NULL",
+            },
+            Interaction.__tablename__: {
+                "miniapp_user_id": "INTEGER NULL",
+                "article_id": "VARCHAR(128) NULL",
+            },
         }
-        scale_column = columns.get("scale")
-        if scale_column is None:
-            click.echo("Company info table does not contain a scale column.", err=True)
-            return
-        if "TEXT" in str(scale_column["type"]).upper():
-            click.echo("Company info schema is already up to date.")
-            return
-        if db.engine.dialect.name != "mysql":
-            click.echo("The company info schema upgrade is supported for MySQL only.", err=True)
-            return
-        db.session.execute(
-            text(f"ALTER TABLE {CompanyInfo.__tablename__} MODIFY COLUMN scale TEXT NOT NULL")
-        )
+        added_columns = []
+        for table_name, table_additions in additions.items():
+            columns = {
+                column["name"] for column in inspect(db.engine).get_columns(table_name)
+            }
+            for column_name, definition in table_additions.items():
+                if column_name in columns:
+                    continue
+                if column_name == "miniapp_user_id" and db.engine.dialect.name != "mysql":
+                    definition = "INTEGER NULL REFERENCES t_miniapp_user(id)"
+                db.session.execute(
+                    text(f"ALTER TABLE {table_name} ADD COLUMN {column_name} {definition}")
+                )
+                added_columns.append(f"{table_name}.{column_name}")
+        for table_name in additions:
+            indexes = inspect(db.engine).get_indexes(table_name)
+            has_user_index = any(
+                index.get("column_names") == ["miniapp_user_id"] for index in indexes
+            )
+            if not has_user_index:
+                index_name = f"ix_{table_name}_miniapp_user_id"
+                db.session.execute(
+                    text(
+                        f"CREATE INDEX {index_name} ON {table_name} "
+                        "(miniapp_user_id)"
+                    )
+                )
+
+        if db.engine.dialect.name == "mysql":
+            for table_name in additions:
+                foreign_keys = inspect(db.engine).get_foreign_keys(table_name)
+                has_user_fk = any(
+                    foreign_key.get("constrained_columns") == ["miniapp_user_id"]
+                    and foreign_key.get("referred_table") == MiniAppUser.__tablename__
+                    for foreign_key in foreign_keys
+                )
+                if not has_user_fk:
+                    db.session.execute(
+                        text(
+                            f"ALTER TABLE {table_name} "
+                            f"ADD CONSTRAINT fk_{table_name}_miniapp_user "
+                            "FOREIGN KEY (miniapp_user_id) "
+                            f"REFERENCES {MiniAppUser.__tablename__} (id)"
+                        )
+                    )
         db.session.commit()
-        click.echo("Company info scale column upgraded to TEXT.")
+        click.echo(
+            "Engagement schema upgraded."
+            if not added_columns
+            else f"Engagement columns added: {', '.join(added_columns)}."
+        )
 
     @app.cli.command("sync-wechat-drafts")
     @click.option("--once", is_flag=True, help="Sync once and exit.")
@@ -191,7 +235,6 @@ def seed_database() -> None:
         [
             CompanyInfo(
                 name="江南谷语酒业有限公司",
-                scale="专注于传统酿造工艺与现代品牌运营",
                 description="江南谷语，传承江南酿造文化，致力于为客户提供高品质白酒产品。",
                 homepage=True,
                 address="浙江省杭州市余杭区良渚文化村",

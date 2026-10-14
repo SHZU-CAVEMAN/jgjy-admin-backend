@@ -69,8 +69,13 @@ class Interaction(BaseModel):
 
     __tablename__ = "t_news_interaction"
 
+    miniapp_user_id: Mapped[int | None] = mapped_column(
+        ForeignKey("t_miniapp_user.id"), nullable=True, index=True
+    )
     user: Mapped[str] = mapped_column(String(128))
     article: Mapped[str] = mapped_column(String(255))
+    article_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
     type: Mapped[str] = mapped_column(String(16))
     interacted_at: Mapped[datetime] = mapped_column(DateTime)
     comment: Mapped[str] = mapped_column(Text, default="-")
+    miniapp_user = relationship("MiniAppUser", lazy="joined")

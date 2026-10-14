@@ -64,6 +64,7 @@ class ConsultationSchema(Schema):
     """序列化小程序用户自己的咨询记录。"""
 
     id = fields.Integer(dump_only=True)
+    miniapp_user_id = fields.Integer(data_key="miniappUserId", dump_only=True)
     name = fields.String()
     phone = fields.String()
     category = fields.String(data_key="type")
@@ -77,6 +78,10 @@ class ConsultationSchema(Schema):
 class FavoriteSchema(KeyedSchema):
     """校验并序列化客户收藏。"""
 
+    miniapp_user_id = fields.Integer(data_key="miniappUserId", dump_only=True)
+    target_id = fields.String(data_key="targetId", dump_only=True, allow_none=True)
+    openid = fields.Method(serialize="get_openid", dump_only=True)
+    phone_number = fields.Method(data_key="phoneNumber", serialize="get_phone_number", dump_only=True)
     customer = fields.String(required=True, validate=validate.Length(min=1, max=128))
     content = fields.String(required=True, validate=validate.Length(min=1, max=255))
     type = fields.String(required=True, validate=validate.OneOf(["产品", "推文"]))
@@ -84,6 +89,23 @@ class FavoriteSchema(KeyedSchema):
         data_key="time",
         format="%Y-%m-%d %H:%M",
         required=True,
+    )
+
+    def get_openid(self, favorite) -> str:
+        """返回关联小程序用户的 OpenID。"""
+        return favorite.miniapp_user.openid if favorite.miniapp_user else ""
+
+    def get_phone_number(self, favorite) -> str:
+        """返回关联小程序用户手机号。"""
+        return favorite.miniapp_user.phone_number if favorite.miniapp_user else ""
+
+
+class FavoriteToggleSchema(Schema):
+    """校验收藏目标。"""
+
+    type = fields.String(required=True, validate=validate.OneOf(["产品", "推文"]))
+    target_id = fields.String(
+        data_key="targetId", required=True, validate=validate.Length(min=1, max=128)
     )
 
 

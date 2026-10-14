@@ -7,7 +7,9 @@ from app.blueprints.customers.schemas import ConsultationSchema
 from app.blueprints.customers.services import (
     create_consultation,
     list_public_need_categories,
+    list_user_favorites,
     list_user_consultations,
+    toggle_user_favorite,
 )
 from app.blueprints.company.schemas import CompanyContactSchema, CompanyProfileSchema
 from app.blueprints.company.services import get_company_info
@@ -16,7 +18,13 @@ from app.blueprints.products.services import (
     get_public_product,
     list_public_products,
 )
-from app.blueprints.news.services import get_public_news, list_public_news
+from app.blueprints.news.services import (
+    create_article_comment,
+    get_public_news,
+    list_article_comments,
+    list_public_news,
+    list_user_comments,
+)
 from app.common.exception import BusinessError
 from app.common.response import success
 
@@ -115,10 +123,50 @@ def miniapp_news_detail(media_id: str):
     return success(get_public_news(media_id))
 
 
+@miniapp_bp.get("/news/<string:media_id>/comments")
+def miniapp_news_comments(media_id: str):
+    """返回已发布文章的用户留言。"""
+    return success(list_article_comments(media_id))
+
+
+@miniapp_bp.post("/news/<string:media_id>/comments")
+@jwt_required()
+def miniapp_news_comment_create(media_id: str):
+    """保存当前小程序用户对文章的留言。"""
+    comment = create_article_comment(
+        int(get_jwt_identity()), media_id, request.get_json(silent=True) or {}
+    )
+    return success(comment, "留言成功", 201)
+
+
 @miniapp_bp.get("/need-categories")
 def miniapp_need_categories():
     """返回小程序启用的需求分类。"""
     return success(list_public_need_categories())
+
+
+@miniapp_bp.get("/favorites")
+@jwt_required()
+def miniapp_favorites():
+    """返回当前小程序用户的收藏。"""
+    return success(list_user_favorites(int(get_jwt_identity())))
+
+
+@miniapp_bp.post("/favorites/toggle")
+@jwt_required()
+def miniapp_favorite_toggle():
+    """切换当前小程序用户的收藏状态。"""
+    result = toggle_user_favorite(
+        int(get_jwt_identity()), request.get_json(silent=True) or {}
+    )
+    return success(result)
+
+
+@miniapp_bp.get("/my-comments")
+@jwt_required()
+def miniapp_my_comments():
+    """返回当前小程序用户发表的留言。"""
+    return success(list_user_comments(int(get_jwt_identity())))
 
 
 @miniapp_bp.post("/consultations")
