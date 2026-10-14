@@ -99,6 +99,7 @@ def test_settings_and_dashboard(client, auth_headers):
         "/api/dashboard/summary",
         headers=auth_headers,
     ).get_json()["data"]
+    assert dashboard["totalNeeds"] == 3
     assert dashboard["stats"][0]["value"] == "3"
     assert len(dashboard["latestNeeds"]) == 3
 

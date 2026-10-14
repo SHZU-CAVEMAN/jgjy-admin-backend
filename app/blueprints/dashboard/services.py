@@ -77,10 +77,11 @@ def _build_summary() -> dict:
         .limit(5)
     ).all()
     return {
+        "totalNeeds": total_needs,
         "stats": [
             _stat("客户需求总量", total_needs, "#2474f5"),
             _stat("待处理需求", pending_needs, "#f59e0b"),
-            _stat("产品收藏次数", total_favorites, "#16a085"),
+            _stat("内容收藏总量", total_favorites, "#16a085"),
             _stat("推文互动总量", total_interactions, "#e65b81"),
         ],
         "trend": trend,
@@ -98,10 +99,9 @@ def _count(model, *conditions) -> int:
 
 
 def _stat(label: str, value: int, color: str) -> dict:
-    """构建一项与前端兼容的统计指标。"""
+    """构建一项实时统计指标。"""
     return {
         "label": label,
         "value": f"{value:,}",
-        "trend": "0.0%",
         "color": color,
     }
