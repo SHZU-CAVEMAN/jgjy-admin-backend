@@ -454,6 +454,29 @@ def test_miniapp_engagement_is_linked_to_current_user(client, app, auth_headers)
     saved_article = next(item for item in first_favorites if item["type"] == "推文")
     assert saved_article["item"]["title"] == "接口测试文章"
 
+    summary = client.get(
+        "/api/miniapp/news/engagement-news-id/interactions",
+        headers=first_headers,
+    ).get_json()["data"]
+    assert summary == {
+        "likeCount": 0,
+        "favoriteCount": 1,
+        "shareCount": 0,
+        "liked": False,
+        "collected": True,
+    }
+    liked = client.post(
+        "/api/miniapp/news/engagement-news-id/likes/toggle",
+        headers=first_headers,
+    )
+    assert liked.get_json()["data"]["likeCount"] == 1
+    assert liked.get_json()["data"]["liked"] is True
+    shared = client.post(
+        "/api/miniapp/news/engagement-news-id/shares",
+        headers=first_headers,
+    )
+    assert shared.get_json()["data"]["shareCount"] == 1
+
     consultation = client.post(
         "/api/miniapp/consultations",
         headers=first_headers,
@@ -518,6 +541,26 @@ def test_miniapp_engagement_is_linked_to_current_user(client, app, auth_headers)
     )
     assert saved_comment["miniappUserId"] == first_user_id
     assert saved_comment["openid"] == "engagement-user-one"
+
+    admin_interactions = client.get(
+        "/api/news/interactions", headers=auth_headers
+    ).get_json()["data"]["items"]
+    article_interactions = [
+        item for item in admin_interactions
+        if item.get("articleId") == "engagement-news-id"
+    ]
+    assert {item["type"] for item in article_interactions} == {
+        "收藏", "点赞", "转发", "留言"
+    }
+
+    admin_drafts = client.get("/api/news/drafts", headers=auth_headers)
+    engagement_draft = next(
+        item for item in admin_drafts.get_json()["data"]["items"]
+        if item["mediaId"] == "engagement-news-id"
+    )
+    assert engagement_draft["likeCount"] == 1
+    assert engagement_draft["favoriteCount"] == 1
+    assert engagement_draft["shareCount"] == 1
 
 
 def test_upgrade_miniapp_engagement_schema_adds_user_links(app):

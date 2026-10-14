@@ -20,10 +20,13 @@ from app.blueprints.products.services import (
 )
 from app.blueprints.news.services import (
     create_article_comment,
+    get_article_interaction_summary,
     get_public_news,
     list_article_comments,
     list_public_news,
     list_user_comments,
+    record_article_share,
+    toggle_article_like,
 )
 from app.common.exception import BusinessError
 from app.common.response import success
@@ -121,6 +124,29 @@ def miniapp_news():
 def miniapp_news_detail(media_id: str):
     """返回小程序可见的已发布推文详情。"""
     return success(get_public_news(media_id))
+
+
+@miniapp_bp.get("/news/<string:media_id>/interactions")
+@jwt_required(optional=True)
+def miniapp_news_interactions(media_id: str):
+    """返回文章互动计数及可选的当前用户状态。"""
+    identity = get_jwt_identity()
+    user_id = int(identity) if identity is not None else None
+    return success(get_article_interaction_summary(media_id, user_id))
+
+
+@miniapp_bp.post("/news/<string:media_id>/likes/toggle")
+@jwt_required()
+def miniapp_news_like_toggle(media_id: str):
+    """切换当前小程序用户对文章的点赞。"""
+    return success(toggle_article_like(int(get_jwt_identity()), media_id))
+
+
+@miniapp_bp.post("/news/<string:media_id>/shares")
+@jwt_required()
+def miniapp_news_share(media_id: str):
+    """记录当前小程序用户的一次文章转发。"""
+    return success(record_article_share(int(get_jwt_identity()), media_id))
 
 
 @miniapp_bp.get("/news/<string:media_id>/comments")

@@ -4,7 +4,7 @@ from datetime import datetime
 from typing import Any
 
 from app.blueprints.miniapp.models import MiniAppUser
-from app.blueprints.news.models import WechatDraft
+from app.blueprints.news.models import Interaction, WechatDraft
 from app.blueprints.news.services import _serialize_public_news
 from app.blueprints.products.models import Product
 from app.blueprints.products.services import _serialize_public_product
@@ -200,6 +200,17 @@ def toggle_user_favorite(user_id: int, payload: dict[str, Any]) -> dict[str, Any
     )
     if favorite is not None:
         favorite.soft_delete()
+        if data["type"] == "推文":
+            interaction = db.session.scalar(
+                db.select(Interaction).where(
+                    Interaction.miniapp_user_id == user_id,
+                    Interaction.article_id == target_id,
+                    Interaction.type == "收藏",
+                    Interaction.is_deleted.is_(False),
+                )
+            )
+            if interaction is not None:
+                interaction.soft_delete()
         db.session.commit()
         return {"collected": False}
 
@@ -212,6 +223,18 @@ def toggle_user_favorite(user_id: int, payload: dict[str, Any]) -> dict[str, Any
         favorited_at=datetime.now(),
     )
     db.session.add(favorite)
+    if data["type"] == "推文":
+        db.session.add(
+            Interaction(
+                miniapp_user_id=user.id,
+                user=user.nickname or user.phone_number,
+                article=content,
+                article_id=target_id,
+                type="收藏",
+                interacted_at=datetime.now(),
+                comment="-",
+            )
+        )
     db.session.commit()
     return {
         "collected": True,

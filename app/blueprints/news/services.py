@@ -86,8 +86,14 @@ def list_wechat_drafts(args: dict) -> dict:
         per_page=page_size,
         error_out=False,
     )
+    items = wechat_draft_schema.dump(pagination.items, many=True)
+    counts_by_article = _get_article_interaction_counts(
+        [item["mediaId"] for item in items if item.get("mediaId")]
+    )
+    for item in items:
+        item.update(counts_by_article.get(item.get("mediaId"), _empty_interaction_counts()))
     return {
-        "items": wechat_draft_schema.dump(pagination.items, many=True),
+        "items": items,
         "total": pagination.total,
         "page": pagination.page,
         "pageSize": pagination.per_page,
@@ -123,8 +129,14 @@ def list_public_news(args: dict) -> dict:
         per_page=page_size,
         error_out=False,
     )
+    items = [_serialize_public_news(draft) for draft in pagination.items]
+    counts_by_article = _get_article_interaction_counts(
+        [item["id"] for item in items]
+    )
+    for item in items:
+        item.update(counts_by_article.get(item["id"], _empty_interaction_counts()))
     return {
-        "items": [_serialize_public_news(draft) for draft in pagination.items],
+        "items": items,
         "total": pagination.total,
         "page": pagination.page,
         "pageSize": pagination.per_page,
@@ -143,7 +155,134 @@ def get_public_news(media_id: str) -> dict:
     )
     if draft is None:
         raise BusinessError("文章不存在或尚未发布", 404)
-    return _serialize_public_news(draft, include_content=True)
+    article = _serialize_public_news(draft, include_content=True)
+    article.update(
+        _get_article_interaction_counts([media_id]).get(
+            media_id, _empty_interaction_counts()
+        )
+    )
+    return article
+
+
+def get_article_interaction_summary(media_id: str, user_id: int | None) -> dict:
+    """返回已发布文章的互动总数和当前用户状态。"""
+    _get_published_draft(media_id)
+    summary = _get_article_interaction_counts([media_id]).get(
+        media_id, _empty_interaction_counts()
+    )
+    summary.update({"liked": False, "collected": False})
+    if user_id is not None:
+        active_types = db.session.scalars(
+            db.select(Interaction.type).where(
+                Interaction.article_id == media_id,
+                Interaction.miniapp_user_id == user_id,
+                Interaction.type.in_(["点赞", "收藏"]),
+                Interaction.is_deleted.is_(False),
+            )
+        ).all()
+        summary["liked"] = "点赞" in active_types
+        summary["collected"] = "收藏" in active_types
+    return summary
+
+
+def toggle_article_like(user_id: int, media_id: str) -> dict:
+    """切换当前小程序用户对文章的点赞状态。"""
+    user = db.session.get(MiniAppUser, user_id)
+    if user is None or user.is_deleted or not user.is_active:
+        raise BusinessError("小程序用户不存在或已停用", 401)
+    draft = _get_published_draft(media_id)
+    like = db.session.scalar(
+        db.select(Interaction).where(
+            Interaction.article_id == media_id,
+            Interaction.miniapp_user_id == user_id,
+            Interaction.type == "点赞",
+            Interaction.is_deleted.is_(False),
+        )
+    )
+    if like is not None:
+        like.soft_delete()
+    else:
+        db.session.add(
+            Interaction(
+                miniapp_user_id=user.id,
+                user=user.nickname or user.phone_number,
+                article=draft.title,
+                article_id=draft.media_id,
+                type="点赞",
+                interacted_at=datetime.now(),
+                comment="-",
+            )
+        )
+    db.session.commit()
+    return get_article_interaction_summary(media_id, user_id)
+
+
+def record_article_share(user_id: int, media_id: str) -> dict:
+    """记录当前小程序用户发起的一次文章转发。"""
+    user = db.session.get(MiniAppUser, user_id)
+    if user is None or user.is_deleted or not user.is_active:
+        raise BusinessError("小程序用户不存在或已停用", 401)
+    draft = _get_published_draft(media_id)
+    db.session.add(
+        Interaction(
+            miniapp_user_id=user.id,
+            user=user.nickname or user.phone_number,
+            article=draft.title,
+            article_id=draft.media_id,
+            type="转发",
+            interacted_at=datetime.now(),
+            comment="-",
+        )
+    )
+    db.session.commit()
+    return get_article_interaction_summary(media_id, user_id)
+
+
+def _get_published_draft(media_id: str) -> WechatDraft:
+    """根据 media ID 返回可互动的已发布文章。"""
+    draft = db.session.scalar(
+        db.select(WechatDraft).where(
+            WechatDraft.media_id == media_id,
+            WechatDraft.status == "已发布",
+            WechatDraft.is_deleted.is_(False),
+        )
+    )
+    if draft is None:
+        raise BusinessError("文章不存在或尚未发布", 404)
+    return draft
+
+
+def _empty_interaction_counts() -> dict[str, int]:
+    """返回文章互动计数的零值结构。"""
+    return {"likeCount": 0, "favoriteCount": 0, "shareCount": 0}
+
+
+def _get_article_interaction_counts(media_ids: list[str]) -> dict[str, dict[str, int]]:
+    """按文章批量统计当前有效点赞、收藏和转发记录。"""
+    counts = {media_id: _empty_interaction_counts() for media_id in media_ids}
+    if not media_ids:
+        return counts
+    field_by_type = {
+        "点赞": "likeCount",
+        "收藏": "favoriteCount",
+        "转发": "shareCount",
+    }
+    rows = db.session.execute(
+        db.select(
+            Interaction.article_id,
+            Interaction.type,
+            db.func.count(Interaction.id),
+        )
+        .where(
+            Interaction.article_id.in_(media_ids),
+            Interaction.is_deleted.is_(False),
+            Interaction.type.in_(field_by_type),
+        )
+        .group_by(Interaction.article_id, Interaction.type)
+    ).all()
+    for media_id, interaction_type, count in rows:
+        counts[media_id][field_by_type[interaction_type]] = count
+    return counts
 
 
 def list_article_comments(media_id: str) -> list[dict]:
