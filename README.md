@@ -123,6 +123,8 @@ python scripts/image_processor.py INPUT OUTPUT `
 mysql+pymysql://user:password@127.0.0.1:3306/jgjy?charset=utf8mb4
 ```
 
+已有数据库升级新闻草稿分类结构时，先备份数据库，再执行 `flask upgrade-news-draft-schema`。该命令会新增 `category_id` 外键，并按原分类名称回填草稿关联；旧的 `category` 文本列会保留，不再用于读写。
+
 ## API 约定
 
 所有响应格式：

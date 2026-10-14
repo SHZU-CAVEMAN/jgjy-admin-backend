@@ -4,8 +4,9 @@ import json
 from unittest.mock import Mock
 
 from requests import Response
+from sqlalchemy import text
 
-from app.blueprints.news.models import WechatDraft
+from app.blueprints.news.models import NewsCategory, WechatDraft
 from app.common.extensions import db
 
 
@@ -243,7 +244,7 @@ def test_wechat_drafts_sync_and_content_preview(client, auth_headers, app, monke
         json={
             "title": "已编辑草稿",
             "author": "新编辑",
-            "category": "测试草稿分类",
+            "categoryId": category_id,
             "status": "已发布",
             "digest": "已编辑摘要",
         },
@@ -254,6 +255,7 @@ def test_wechat_drafts_sync_and_content_preview(client, auth_headers, app, monke
     assert updated_data["title"] == "已编辑草稿"
     assert updated_data["author"] == "新编辑"
     assert updated_data["category"] == "测试草稿分类"
+    assert updated_data["categoryId"] == category_id
     assert updated_data["status"] == "已发布"
     assert updated_data["digest"] == "已编辑摘要"
 
@@ -262,10 +264,23 @@ def test_wechat_drafts_sync_and_content_preview(client, auth_headers, app, monke
     ).get_json()["data"]
     assert published_category["count"] == 1
 
+    renamed = client.patch(
+        f"/api/news/categories/{category_id}",
+        headers=auth_headers,
+        json={"name": "改名后的草稿分类"},
+    )
+    assert renamed.status_code == 200
+    renamed_draft = client.get(
+        "/api/news/drafts?keyword=已编辑", headers=auth_headers
+    ).get_json()["data"]["items"][0]
+    assert renamed_draft["category"] == "改名后的草稿分类"
+    assert renamed_draft["categoryId"] == category_id
+    assert renamed.get_json()["data"]["count"] == 1
+
     invalid_category = client.patch(
         "/api/news/drafts/draft-media-id",
         headers=auth_headers,
-        json={"category": "不存在的分类"},
+        json={"categoryId": 999999},
     )
     assert invalid_category.status_code == 422
 
@@ -323,13 +338,14 @@ def test_wechat_drafts_sync_and_content_preview(client, auth_headers, app, monke
 def test_miniapp_news_only_returns_published_drafts(client, app):
     """Mini-program news should only expose locally published draft content."""
     with app.app_context():
+        category = NewsCategory(name="新闻动态", status="启用")
         db.session.add_all(
             [
                 WechatDraft(
                     media_id="published-news",
                     title="已发布文章",
                     author="编辑",
-                    category="新闻动态",
+                    news_category=category,
                     digest="文章摘要",
                     status="已发布",
                     thumbnail_url="https://example.com/cover.jpg",
@@ -343,11 +359,19 @@ def test_miniapp_news_only_returns_published_drafts(client, app):
             ]
         )
         db.session.commit()
+        category_id = category.id
 
     listing = client.get("/api/miniapp/news")
     assert listing.status_code == 200
     assert listing.get_json()["data"]["total"] == 1
-    assert listing.get_json()["data"]["items"][0]["id"] == "published-news"
+    item = listing.get_json()["data"]["items"][0]
+    assert item["id"] == "published-news"
+    assert item["category"] == "新闻动态"
+    assert item["categoryId"] == category_id
+
+    filtered = client.get(f"/api/miniapp/news?categoryId={category_id}")
+    assert filtered.status_code == 200
+    assert filtered.get_json()["data"]["total"] == 1
 
     detail = client.get("/api/miniapp/news/published-news")
     assert detail.status_code == 200
@@ -355,6 +379,32 @@ def test_miniapp_news_only_returns_published_drafts(client, app):
 
     hidden = client.get("/api/miniapp/news/draft-news")
     assert hidden.status_code == 404
+
+
+def test_upgrade_news_draft_schema_backfills_category_id(app):
+    """Existing draft category names should migrate to category foreign keys."""
+    with app.app_context():
+        category = NewsCategory(name="旧分类", status="启用")
+        draft = WechatDraft(media_id="legacy-draft")
+        db.session.add_all([category, draft])
+        db.session.flush()
+        db.session.execute(
+            text("ALTER TABLE t_wechat_draft ADD COLUMN category VARCHAR(64)")
+        )
+        db.session.execute(
+            text("UPDATE t_wechat_draft SET category = :name WHERE id = :draft_id"),
+            {"name": category.name, "draft_id": draft.id},
+        )
+        draft_id = draft.id
+        category_id = category.id
+        db.session.commit()
+
+    result = app.test_cli_runner().invoke(args=["upgrade-news-draft-schema"])
+    assert result.exit_code == 0, result.output
+
+    with app.app_context():
+        migrated = db.session.get(WechatDraft, draft_id)
+        assert migrated.category_id == category_id
 
 
 def test_miniapp_home_and_company_are_public(client):

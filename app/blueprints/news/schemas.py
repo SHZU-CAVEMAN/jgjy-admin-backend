@@ -58,7 +58,8 @@ class WechatDraftSchema(KeyedSchema):
     media_id = fields.String(data_key="mediaId")
     title = fields.String()
     author = fields.String()
-    category = fields.String(allow_none=True)
+    category_id = fields.Integer(data_key="categoryId", allow_none=True)
+    category = fields.Method("get_category_name", dump_only=True)
     status = fields.String(validate=validate.OneOf(["草稿", "已发布"]))
     digest = fields.String()
     thumbnail_url = fields.String(data_key="thumbnailUrl")
@@ -72,13 +73,18 @@ class WechatDraftSchema(KeyedSchema):
         data_key="contentSyncedAt", format="%Y-%m-%d %H:%M", allow_none=True
     )
 
+    @staticmethod
+    def get_category_name(draft):
+        """返回关联分类的当前名称。"""
+        return draft.news_category.name if draft.news_category else None
+
 
 class WechatDraftUpdateSchema(Schema):
     """校验本地微信公众号草稿可编辑信息。"""
 
     title = fields.String(validate=validate.Length(min=1, max=255))
     author = fields.String(validate=validate.Length(max=128))
-    category = fields.String(allow_none=True, validate=validate.Length(min=1, max=64))
+    category_id = fields.Integer(data_key="categoryId", allow_none=True)
     status = fields.String(validate=validate.OneOf(["草稿", "已发布"]))
     digest = fields.String(validate=validate.Length(max=65535))
 

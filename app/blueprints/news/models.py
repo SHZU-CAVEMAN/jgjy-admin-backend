@@ -2,8 +2,8 @@
 
 from datetime import date, datetime
 
-from sqlalchemy import Boolean, Date, DateTime, Integer, String, Text
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy import Boolean, Date, DateTime, ForeignKey, Integer, String, Text
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base_model import BaseModel
 
@@ -50,7 +50,10 @@ class WechatDraft(BaseModel):
     media_id: Mapped[str] = mapped_column(String(128), unique=True, index=True)
     title: Mapped[str] = mapped_column(String(255), default="")
     author: Mapped[str] = mapped_column(String(128), default="")
-    category: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    category_id: Mapped[int | None] = mapped_column(
+        ForeignKey("t_news_category.id"), nullable=True
+    )
+    news_category: Mapped[NewsCategory | None] = relationship()
     status: Mapped[str] = mapped_column(String(16), default="草稿")
     digest: Mapped[str] = mapped_column(Text, default="")
     thumbnail_url: Mapped[str] = mapped_column(String(1024), default="")

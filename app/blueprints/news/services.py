@@ -7,6 +7,7 @@ import requests
 from flask import current_app
 from redis.exceptions import RedisError
 from sqlalchemy import or_
+from sqlalchemy.orm import joinedload
 
 from app.common.crud import CrudService
 from app.common.exception import BusinessError
@@ -68,7 +69,9 @@ def update_pull_setting(payload: dict) -> PullSetting:
 def list_wechat_drafts(args: dict) -> dict:
     page = max(int(args.get("page", 1)), 1)
     page_size = min(max(int(args.get("pageSize", 20)), 1), 100)
-    statement = db.select(WechatDraft).where(WechatDraft.is_deleted.is_(False))
+    statement = db.select(WechatDraft).options(
+        joinedload(WechatDraft.news_category)
+    ).where(WechatDraft.is_deleted.is_(False))
     keyword = str(args.get("keyword", "")).strip()
     if keyword:
         pattern = f"%{keyword}%"
@@ -94,13 +97,24 @@ def list_public_news(args: dict) -> dict:
     """返回小程序可展示的已发布推文分页列表。"""
     page = max(int(args.get("page", 1)), 1)
     page_size = min(max(int(args.get("pageSize", 20)), 1), 100)
-    statement = db.select(WechatDraft).where(
+    statement = db.select(WechatDraft).options(
+        joinedload(WechatDraft.news_category)
+    ).where(
         WechatDraft.is_deleted.is_(False),
         WechatDraft.status == "已发布",
     )
-    category = str(args.get("category", "")).strip()
-    if category:
-        statement = statement.where(WechatDraft.category == category)
+    category_id = str(args.get("categoryId", "")).strip()
+    if category_id:
+        try:
+            statement = statement.where(WechatDraft.category_id == int(category_id))
+        except ValueError as exc:
+            raise BusinessError("推文分类 ID 无效", 422) from exc
+    else:
+        category_name = str(args.get("category", "")).strip()
+        if category_name:
+            statement = statement.join(WechatDraft.news_category).where(
+                NewsCategory.name == category_name
+            )
     pagination = db.paginate(
         statement.order_by(WechatDraft.draft_updated_at.desc(), WechatDraft.id.desc()),
         page=page,
@@ -139,7 +153,8 @@ def _serialize_public_news(draft: WechatDraft, include_content: bool = False) ->
         "id": draft.media_id,
         "title": draft.title,
         "author": draft.author,
-        "category": draft.category or "未分类",
+        "categoryId": draft.category_id,
+        "category": draft.news_category.name if draft.news_category else "未分类",
         "summary": draft.digest,
         "image": draft.thumbnail_url,
         "date": updated_at.strftime("%Y-%m-%d") if updated_at else "",
@@ -234,16 +249,18 @@ def update_wechat_draft(media_id: str, payload: dict) -> WechatDraft:
     if draft is None:
         raise BusinessError("草稿不存在，请先同步草稿列表", 404)
     data = WechatDraftUpdateSchema().load(payload, partial=True)
-    previous_category = draft.category
+    previous_category_id = draft.category_id
     previous_status = draft.status
-    next_category = data.get("category", previous_category)
+    next_category_id = data.get("category_id", previous_category_id)
     next_status = data.get("status", previous_status)
-    if next_status == "已发布" and not next_category:
+    if next_status == "已发布" and not next_category_id:
         raise BusinessError("发布推文前请选择分类", 422)
-    if "category" in data:
+    if next_category_id is not None and (
+        "category_id" in data or next_status == "已发布"
+    ):
         active_category = db.session.scalar(
             db.select(NewsCategory).where(
-                NewsCategory.name == next_category,
+                NewsCategory.id == next_category_id,
                 NewsCategory.status == "启用",
                 NewsCategory.is_deleted.is_(False),
             )
@@ -253,9 +270,9 @@ def update_wechat_draft(media_id: str, payload: dict) -> WechatDraft:
     for key, value in data.items():
         setattr(draft, key, value)
     _update_category_statistics(
-        previous_category,
+        previous_category_id,
         previous_status,
-        next_category,
+        next_category_id,
         next_status,
     )
     db.session.commit()
@@ -263,28 +280,28 @@ def update_wechat_draft(media_id: str, payload: dict) -> WechatDraft:
 
 
 def _update_category_statistics(
-    previous_category: str | None,
+    previous_category_id: int | None,
     previous_status: str,
-    next_category: str | None,
+    next_category_id: int | None,
     next_status: str,
 ) -> None:
     """按草稿的发布状态和分类变化维护分类统计。"""
-    if previous_status == "已发布" and previous_category:
-        if next_status != "已发布" or previous_category != next_category:
+    if previous_status == "已发布" and previous_category_id:
+        if next_status != "已发布" or previous_category_id != next_category_id:
             category = db.session.scalar(
                 db.select(NewsCategory).where(
-                    NewsCategory.name == previous_category,
+                    NewsCategory.id == previous_category_id,
                     NewsCategory.is_deleted.is_(False),
                 )
             )
             if category is not None:
                 category.count = max(category.count - 1, 0)
                 category.updated = date.today()
-    if next_status == "已发布" and next_category:
-        if previous_status != "已发布" or previous_category != next_category:
+    if next_status == "已发布" and next_category_id:
+        if previous_status != "已发布" or previous_category_id != next_category_id:
             category = db.session.scalar(
                 db.select(NewsCategory).where(
-                    NewsCategory.name == next_category,
+                    NewsCategory.id == next_category_id,
                     NewsCategory.is_deleted.is_(False),
                 )
             )

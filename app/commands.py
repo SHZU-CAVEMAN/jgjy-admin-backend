@@ -36,28 +36,70 @@ def register_commands(app: Flask) -> None:
         click.echo("Database initialized.")
 
     @app.cli.command("upgrade-news-draft-schema")
-    # 为已有草稿表补齐后台编辑需要的字段
     def upgrade_news_draft_schema() -> None:
+        """为已有草稿表增加分类外键并回填旧分类名称。"""
         columns = {
             column["name"] for column in inspect(db.engine).get_columns(WechatDraft.__tablename__)
         }
         additions = {
-            "category": "VARCHAR(64)",
+            "category_id": "INTEGER NULL",
             "status": "VARCHAR(16) NOT NULL DEFAULT '草稿'",
         }
         missing_columns = [name for name in additions if name not in columns]
-        if not missing_columns:
-            click.echo("Wechat draft schema is already up to date.")
-            return
         for name in missing_columns:
+            column_definition = additions[name]
+            if name == "category_id" and db.engine.dialect.name != "mysql":
+                column_definition = "INTEGER NULL REFERENCES t_news_category(id)"
             db.session.execute(
                 text(
                     f"ALTER TABLE {WechatDraft.__tablename__} "
-                    f"ADD COLUMN {name} {additions[name]}"
+                    f"ADD COLUMN {name} {column_definition}"
                 )
             )
+
+        if db.engine.dialect.name == "mysql":
+            foreign_keys = inspect(db.engine).get_foreign_keys(WechatDraft.__tablename__)
+            has_category_fk = any(
+                foreign_key.get("constrained_columns") == ["category_id"]
+                for foreign_key in foreign_keys
+            )
+            if not has_category_fk:
+                db.session.execute(
+                    text(
+                        "ALTER TABLE t_wechat_draft "
+                        "ADD CONSTRAINT fk_t_wechat_draft_category_id "
+                        "FOREIGN KEY (category_id) REFERENCES t_news_category (id)"
+                    )
+                )
+
+        if "category" in columns:
+            category_by_name = {}
+            categories = db.session.scalars(
+                db.select(NewsCategory).where(NewsCategory.is_deleted.is_(False))
+            ).all()
+            for category in categories:
+                category_by_name.setdefault(category.name, category.id)
+            legacy_drafts = db.session.execute(
+                text(
+                    "SELECT id, category FROM t_wechat_draft "
+                    "WHERE category_id IS NULL AND category IS NOT NULL"
+                )
+            ).all()
+            for draft_id, category_name in legacy_drafts:
+                category_id = category_by_name.get(category_name)
+                if category_id is not None:
+                    db.session.execute(
+                        text(
+                            "UPDATE t_wechat_draft SET category_id = :category_id "
+                            "WHERE id = :draft_id"
+                        ),
+                        {"category_id": category_id, "draft_id": draft_id},
+                    )
         db.session.commit()
-        click.echo(f"Wechat draft columns added: {', '.join(missing_columns)}.")
+        if missing_columns:
+            click.echo(f"Wechat draft columns added: {', '.join(missing_columns)}.")
+        else:
+            click.echo("Wechat draft schema is already up to date.")
 
     @app.cli.command("upgrade-company-info-schema")
     def upgrade_company_info_schema() -> None:
