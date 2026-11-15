@@ -36,6 +36,7 @@ class CustomerNeed(BaseModel):
     name: Mapped[str] = mapped_column(String(128))
     phone: Mapped[str] = mapped_column(String(32), default="")
     category: Mapped[str] = mapped_column(String(64))
+    customer_type: Mapped[str] = mapped_column(String(16), default="个人")
     method: Mapped[str] = mapped_column(String(32))
     region: Mapped[str] = mapped_column(String(128), default="")
     budget: Mapped[str] = mapped_column(String(64), default="")

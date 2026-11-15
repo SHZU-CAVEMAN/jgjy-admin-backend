@@ -485,11 +485,13 @@ def test_miniapp_engagement_is_linked_to_current_user(client, app, auth_headers)
             "name": "留言用户一",
             "phone": "13800000001",
             "categoryId": category_id,
+            "customerType": "企业",
             "remark": "用户关联测试",
         },
     )
     assert consultation.status_code == 201
     assert consultation.get_json()["data"]["miniappUserId"] == first_user_id
+    assert consultation.get_json()["data"]["customerType"] == "企业"
     admin_needs = client.get(
         "/api/customers/needs?keyword=留言用户一", headers=auth_headers
     ).get_json()["data"]["items"]
@@ -498,6 +500,7 @@ def test_miniapp_engagement_is_linked_to_current_user(client, app, auth_headers)
     )
     assert saved_consultation["miniappUserId"] == first_user_id
     assert saved_consultation["openid"] == "engagement-user-one"
+    assert saved_consultation["customerType"] == "企业"
     assert client.get(
         "/api/miniapp/consultations", headers=second_headers
     ).get_json()["data"] == []

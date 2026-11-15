@@ -30,6 +30,11 @@ class CustomerNeedSchema(KeyedSchema):
     name = fields.String(required=True, validate=validate.Length(min=1, max=128))
     phone = fields.String(load_default="", validate=validate.Length(max=32))
     category = fields.String(required=True, validate=validate.Length(min=1, max=64))
+    customer_type = fields.String(
+        data_key="customerType",
+        load_default="个人",
+        validate=validate.OneOf(["个人", "企业", "经销商"]),
+    )
     method = fields.String(required=True, validate=validate.Length(min=1, max=32))
     region = fields.String(load_default="", validate=validate.Length(max=128))
     budget = fields.String(load_default="", validate=validate.Length(max=64))
@@ -53,8 +58,13 @@ class ConsultationCreateSchema(Schema):
     """校验小程序提交的咨询需求。"""
 
     name = fields.String(required=True, validate=validate.Length(min=1, max=128))
-    phone = fields.String(required=True, validate=validate.Regexp(r"^1\d{10}$"))
-    category_id = fields.Integer(data_key="categoryId", required=True)
+    phone = fields.String(load_default="", validate=validate.Length(max=32))
+    category_id = fields.Integer(data_key="categoryId", load_default=None, allow_none=True)
+    customer_type = fields.String(
+        data_key="customerType",
+        load_default="个人",
+        validate=validate.Length(max=32),
+    )
     region = fields.String(load_default="", validate=validate.Length(max=128))
     budget = fields.String(load_default="", validate=validate.Length(max=64))
     remark = fields.String(load_default="", validate=validate.Length(max=1000))
@@ -68,6 +78,7 @@ class ConsultationSchema(Schema):
     name = fields.String()
     phone = fields.String()
     category = fields.String(data_key="type")
+    customer_type = fields.String(data_key="customerType")
     region = fields.String()
     budget = fields.String()
     content = fields.String(data_key="remark")

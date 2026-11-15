@@ -106,7 +106,10 @@ def register_commands(app: Flask) -> None:
     def upgrade_miniapp_engagement_schema() -> None:
         """为收藏和推文留言增加小程序用户及目标关联字段。"""
         additions = {
-            CustomerNeed.__tablename__: {"miniapp_user_id": "INTEGER NULL"},
+            CustomerNeed.__tablename__: {
+                "miniapp_user_id": "INTEGER NULL",
+                "customer_type": "VARCHAR(16) NOT NULL DEFAULT '个人'",
+            },
             Favorite.__tablename__: {
                 "miniapp_user_id": "INTEGER NULL",
                 "target_id": "VARCHAR(128) NULL",
@@ -167,6 +170,24 @@ def register_commands(app: Flask) -> None:
             if not added_columns
             else f"Engagement columns added: {', '.join(added_columns)}."
         )
+
+    @app.cli.command("upgrade-customer-type-schema")
+    def upgrade_customer_type_schema() -> None:
+        """为已有客户需求表增加客户类型字段。"""
+        columns = {
+            column["name"] for column in inspect(db.engine).get_columns(CustomerNeed.__tablename__)
+        }
+        if "customer_type" in columns:
+            click.echo("Customer type schema is already up to date.")
+            return
+        db.session.execute(
+            text(
+                f"ALTER TABLE {CustomerNeed.__tablename__} "
+                "ADD COLUMN customer_type VARCHAR(16) NOT NULL DEFAULT '个人'"
+            )
+        )
+        db.session.commit()
+        click.echo("Customer type schema upgraded.")
 
     @app.cli.command("sync-wechat-drafts")
     @click.option("--once", is_flag=True, help="Sync once and exit.")
@@ -265,9 +286,9 @@ def _seed_customers() -> None:
     _add_if_empty(
         CustomerNeed,
         [
-            CustomerNeed(name="杭州远景科技", category="产品咨询", method="官网表单", submitted_at=datetime(2026, 9, 12, 10, 24), status="待处理"),
-            CustomerNeed(name="上海青禾食品", category="渠道合作", method="微信公众号", submitted_at=datetime(2026, 9, 12, 9, 48), status="已处理"),
-            CustomerNeed(name="苏州新锐制造", category="定制需求", method="官网表单", submitted_at=datetime(2026, 9, 11, 16, 32), status="待处理"),
+            CustomerNeed(name="杭州远景科技", category="产品咨询", customer_type="企业", method="官网表单", submitted_at=datetime(2026, 9, 12, 10, 24), status="待处理"),
+            CustomerNeed(name="上海青禾食品", category="渠道合作", customer_type="经销商", method="微信公众号", submitted_at=datetime(2026, 9, 12, 9, 48), status="已处理"),
+            CustomerNeed(name="苏州新锐制造", category="定制需求", customer_type="个人", method="官网表单", submitted_at=datetime(2026, 9, 11, 16, 32), status="待处理"),
         ],
     )
     _add_if_empty(

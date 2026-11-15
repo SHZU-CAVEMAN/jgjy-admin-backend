@@ -68,6 +68,8 @@ def create_consultation(user_id: int, payload: dict[str, Any]) -> CustomerNeed:
     user = db.session.get(MiniAppUser, user_id)
     if user is None or user.is_deleted or not user.is_active:
         raise BusinessError("小程序用户不存在或已停用", 401)
+    if data["category_id"] is None:
+        raise BusinessError("请选择需求类型", 422)
     category = db.session.get(NeedCategory, data["category_id"])
     if category is None or category.is_deleted or category.status != "启用":
         raise BusinessError("需求分类不存在或已停用", 422)
@@ -78,6 +80,7 @@ def create_consultation(user_id: int, payload: dict[str, Any]) -> CustomerNeed:
         name=data["name"],
         phone=data["phone"],
         category=category.name,
+        customer_type=data["customer_type"],
         method="微信小程序",
         region=data["region"],
         budget=data["budget"],
