@@ -2,8 +2,8 @@
 
 from datetime import date
 
-from sqlalchemy import Date, Integer, String
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy import Date, ForeignKey, Integer, Numeric, String
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base_model import BaseModel
 
@@ -18,6 +18,23 @@ class ProductCategory(BaseModel):
     status: Mapped[str] = mapped_column(String(16), default="启用")
 
 
+class Stock(BaseModel):
+    """表示一条储酒库存记录。"""
+
+    __tablename__ = "t_stock"
+
+    category: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    name: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    code: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    zone: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    tons: Mapped[float | None] = mapped_column(Numeric(10, 2), nullable=True)
+    alcohol: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    year: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    stocked_at: Mapped[date | None] = mapped_column(Date, nullable=True)
+    status: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    remark: Mapped[str | None] = mapped_column(String(255), nullable=True)
+
+
 class Product(BaseModel):
     """表示向客户展示的产品。"""
 
@@ -29,15 +46,17 @@ class Product(BaseModel):
     price: Mapped[str] = mapped_column(String(32))
     year: Mapped[str] = mapped_column(String(32), default="")
     description: Mapped[str] = mapped_column(String(512), default="")
-    tank: Mapped[str] = mapped_column(String(64), default="")
-    tank_code: Mapped[str] = mapped_column(String(64), default="")
-    tons: Mapped[int] = mapped_column(Integer, default=0)
-    fill: Mapped[int] = mapped_column(Integer, default=0)
-    zone: Mapped[str] = mapped_column(String(64), default="")
+    stock_id: Mapped[int | None] = mapped_column(
+        ForeignKey("t_stock.id"),
+        nullable=True,
+        index=True,
+    )
     image_original_url: Mapped[str] = mapped_column(String(512), default="")
     thumbnail_url: Mapped[str] = mapped_column(String(512), default="")
     detail_image_url: Mapped[str] = mapped_column(String(512), default="")
     status: Mapped[str] = mapped_column(String(16), default="上架")
+
+    stock = relationship("Stock", lazy="joined")
 
 
 class TraceabilityBatch(BaseModel):

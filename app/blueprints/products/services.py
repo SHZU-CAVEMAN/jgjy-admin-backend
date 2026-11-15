@@ -14,8 +14,13 @@ from app.common.crud import CrudService
 from app.common.exception import BusinessError
 from app.common.extensions import db
 
-from .models import Product, ProductCategory, TraceabilityBatch
-from .schemas import ProductCategorySchema, ProductSchema, TraceabilitySchema
+from .models import Product, ProductCategory, Stock, TraceabilityBatch
+from .schemas import (
+    ProductCategorySchema,
+    ProductSchema,
+    StockSchema,
+    TraceabilitySchema,
+)
 
 MAX_PRODUCT_IMAGE_BYTES = 15 * 1024 * 1024
 THUMBNAIL_SIZE = (480, 360)
@@ -62,6 +67,12 @@ traceability_service = CrudService(
     TraceabilityBatch,
     TraceabilitySchema(),
     ("batch", "product"),
+    ("status",),
+)
+stock_service = CrudService(
+    Stock,
+    StockSchema(),
+    ("category", "name", "code", "zone"),
     ("status",),
 )
 
@@ -176,10 +187,7 @@ def get_public_home_summary() -> dict[str, Any]:
         Product.status == "上架",
     )
     total_tons = db.session.scalar(
-        db.select(func.coalesce(func.sum(Product.tons), 0)).where(
-            Product.is_deleted.is_(False),
-            Product.status == "上架",
-        )
+        db.select(func.coalesce(func.sum(Stock.tons), 0)).where(Stock.is_deleted.is_(False))
     )
     product_count = db.session.scalar(
         db.select(func.count(Product.id)).where(
@@ -202,6 +210,12 @@ def _serialize_public_product(product: Product) -> dict[str, Any]:
     data = ProductSchema().dump(product)
     data["type"] = CATEGORY_TYPES.get(product.category, product.category)
     data["image"] = data.get("thumbnailUrl", "")
+    stock = product.stock
+    data["tank"] = (stock.name or "") if stock else ""
+    data["tankCode"] = (stock.code or "") if stock else ""
+    data["zone"] = (stock.zone or "") if stock else ""
+    data["tons"] = float(stock.tons) if stock and stock.tons is not None else 0
+    data["fill"] = 0
     return data
 
 

@@ -12,6 +12,7 @@ from .services import (
     get_product_image_folder,
     product_service,
     save_product_image,
+    stock_service,
     traceability_service,
 )
 
@@ -25,6 +26,7 @@ register_crud_routes(
     "traceability",
     traceability_service,
 )
+register_crud_routes(products_bp, "/stocks", "stocks", stock_service)
 
 
 @products_bp.post("/images")

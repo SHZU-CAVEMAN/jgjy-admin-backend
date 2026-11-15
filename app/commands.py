@@ -20,7 +20,12 @@ from app.blueprints.news.models import (
     PullSetting,
     WechatDraft,
 )
-from app.blueprints.products.models import Product, ProductCategory, TraceabilityBatch
+from app.blueprints.products.models import (
+    Product,
+    ProductCategory,
+    Stock,
+    TraceabilityBatch,
+)
 from app.common.extensions import db
 
 
@@ -188,6 +193,55 @@ def register_commands(app: Flask) -> None:
         )
         db.session.commit()
         click.echo("Customer type schema upgraded.")
+
+    @app.cli.command("upgrade-stock-schema")
+    def upgrade_stock_schema() -> None:
+        """创建库存表，并为产品表增加 stock_id、移除旧罐体字段。"""
+        Stock.__table__.create(bind=db.engine, checkfirst=True)
+
+        product_table = Product.__tablename__
+        columns = {column["name"] for column in inspect(db.engine).get_columns(product_table)}
+        added = []
+        if "stock_id" not in columns:
+            db.session.execute(
+                text(f"ALTER TABLE {product_table} ADD COLUMN stock_id INTEGER NULL")
+            )
+            added.append("stock_id")
+        index_name = f"ix_{product_table}_stock_id"
+        indexes = {index.get("name") for index in inspect(db.engine).get_indexes(product_table)}
+        if index_name not in indexes:
+            db.session.execute(
+                text(f"CREATE INDEX {index_name} ON {product_table} (stock_id)")
+            )
+
+        removed = []
+        for column_name in ("tank", "tank_code", "tons", "fill", "zone"):
+            if column_name in columns:
+                db.session.execute(
+                    text(f"ALTER TABLE {product_table} DROP COLUMN {column_name}")
+                )
+                removed.append(column_name)
+
+        if db.engine.dialect.name == "mysql":
+            foreign_keys = inspect(db.engine).get_foreign_keys(product_table)
+            has_stock_fk = any(
+                foreign_key.get("constrained_columns") == ["stock_id"]
+                and foreign_key.get("referred_table") == Stock.__tablename__
+                for foreign_key in foreign_keys
+            )
+            if not has_stock_fk:
+                db.session.execute(
+                    text(
+                        f"ALTER TABLE {product_table} "
+                        f"ADD CONSTRAINT fk_{product_table}_stock_id "
+                        f"FOREIGN KEY (stock_id) REFERENCES {Stock.__tablename__} (id)"
+                    )
+                )
+        db.session.commit()
+        click.echo(
+            f"Stock schema upgraded. added: {', '.join(added) or 'none'}; "
+            f"removed: {', '.join(removed) or 'none'}."
+        )
 
     @app.cli.command("sync-wechat-drafts")
     @click.option("--once", is_flag=True, help="Sync once and exit.")
