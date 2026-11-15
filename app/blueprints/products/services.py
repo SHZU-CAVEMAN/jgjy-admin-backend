@@ -214,6 +214,7 @@ def _serialize_public_product(product: Product) -> dict[str, Any]:
     data["tank"] = (stock.name or "") if stock else ""
     data["tankCode"] = (stock.code or "") if stock else ""
     data["zone"] = (stock.zone or "") if stock else ""
+    data["alcohol"] = (stock.alcohol or "") if stock else ""
     data["tons"] = float(stock.tons) if stock and stock.tons is not None else 0
     data["fill"] = 0
     return data
