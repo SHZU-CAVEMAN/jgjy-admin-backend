@@ -45,7 +45,8 @@ favorite_service = CrudService(
 customer_service = CrudService(
     Customer,
     CustomerSchema(),
-    ("company", "contact", "phone"),
+    ("company", "contact", "phone", "region"),
+    ("source",),
 )
 
 

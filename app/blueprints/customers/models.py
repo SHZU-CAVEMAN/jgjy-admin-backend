@@ -1,8 +1,8 @@
 """客户业务域数据库模型。"""
 
-from datetime import date, datetime
+from datetime import datetime
 
-from sqlalchemy import Date, DateTime, ForeignKey, Integer, String, Text
+from sqlalchemy import DateTime, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base_model import BaseModel
@@ -65,12 +65,21 @@ class Favorite(BaseModel):
 
 
 class Customer(BaseModel):
-    """表示客户联系记录。"""
+    """表示客户主档。"""
 
     __tablename__ = "t_customer_info"
 
-    company: Mapped[str] = mapped_column(String(128))
-    contact: Mapped[str] = mapped_column(String(64))
-    phone: Mapped[str] = mapped_column(String(32))
-    needs: Mapped[int] = mapped_column(Integer, default=0)
-    last_contact: Mapped[date] = mapped_column(Date)
+    contact: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    company: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    phone: Mapped[str | None] = mapped_column(String(32), nullable=True, index=True)
+    region: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    miniapp_user_id: Mapped[int | None] = mapped_column(
+        ForeignKey("t_miniapp_user.id"),
+        nullable=True,
+        unique=True,
+        index=True,
+    )
+    source: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    remark: Mapped[str | None] = mapped_column(String(255), nullable=True)
+
+    miniapp_user = relationship("MiniAppUser", lazy="joined")

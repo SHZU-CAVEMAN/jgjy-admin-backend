@@ -121,10 +121,21 @@ class FavoriteToggleSchema(Schema):
 
 
 class CustomerSchema(KeyedSchema):
-    """校验并序列化客户联系方式。"""
+    """校验并序列化客户主档。"""
 
-    company = fields.String(required=True, validate=validate.Length(min=1, max=128))
-    contact = fields.String(required=True, validate=validate.Length(min=1, max=64))
-    phone = fields.String(required=True, validate=validate.Length(min=1, max=32))
-    needs = fields.Integer(load_default=0, validate=validate.Range(min=0))
-    last_contact = fields.Date(data_key="lastContact", required=True)
+    contact = fields.String(allow_none=True, load_default=None, validate=validate.Length(max=64))
+    company = fields.String(allow_none=True, load_default=None, validate=validate.Length(max=128))
+    phone = fields.String(allow_none=True, load_default=None, validate=validate.Length(max=32))
+    region = fields.String(allow_none=True, load_default=None, validate=validate.Length(max=128))
+    miniapp_user_id = fields.Integer(data_key="miniappUserId", allow_none=True, load_default=None)
+    source = fields.String(allow_none=True, load_default=None, validate=validate.Length(max=16))
+    remark = fields.String(allow_none=True, load_default=None, validate=validate.Length(max=255))
+    miniapp_nickname = fields.Method(
+        data_key="miniappNickname",
+        serialize="get_miniapp_nickname",
+        dump_only=True,
+    )
+
+    def get_miniapp_nickname(self, customer) -> str:
+        """返回关联小程序用户的昵称。"""
+        return customer.miniapp_user.nickname if customer.miniapp_user else ""

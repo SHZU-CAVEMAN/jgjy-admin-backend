@@ -284,6 +284,64 @@ def register_commands(app: Flask) -> None:
             f"removed: {', '.join(removed) or 'none'}."
         )
 
+    @app.cli.command("upgrade-customer-info-schema")
+    def upgrade_customer_info_schema() -> None:
+        """将客户信息表改为主档结构。"""
+        table = Customer.__tablename__
+        columns = {column["name"] for column in inspect(db.engine).get_columns(table)}
+        additions = {
+            "region": "VARCHAR(128) NULL",
+            "miniapp_user_id": "INTEGER NULL",
+            "source": "VARCHAR(16) NULL",
+            "remark": "VARCHAR(255) NULL",
+        }
+        added = []
+        for name, definition in additions.items():
+            if name in columns:
+                continue
+            db.session.execute(text(f"ALTER TABLE {table} ADD COLUMN {name} {definition}"))
+            added.append(name)
+        column_sizes = {"company": 128, "contact": 64, "phone": 32}
+        for column, size in column_sizes.items():
+            if column in columns:
+                db.session.execute(
+                    text(f"ALTER TABLE {table} MODIFY {column} VARCHAR({size}) NULL")
+                )
+        removed = []
+        for name in ("needs", "last_contact"):
+            if name in columns:
+                db.session.execute(text(f"ALTER TABLE {table} DROP COLUMN {name}"))
+                removed.append(name)
+        indexes = {index.get("name") for index in inspect(db.engine).get_indexes(table)}
+        if f"ix_{table}_miniapp_user_id" not in indexes:
+            db.session.execute(
+                text(
+                    f"CREATE UNIQUE INDEX ix_{table}_miniapp_user_id "
+                    f"ON {table} (miniapp_user_id)"
+                )
+            )
+        if db.engine.dialect.name == "mysql":
+            foreign_keys = inspect(db.engine).get_foreign_keys(table)
+            has_user_fk = any(
+                foreign_key.get("constrained_columns") == ["miniapp_user_id"]
+                and foreign_key.get("referred_table") == MiniAppUser.__tablename__
+                for foreign_key in foreign_keys
+            )
+            if not has_user_fk:
+                db.session.execute(
+                    text(
+                        f"ALTER TABLE {table} "
+                        f"ADD CONSTRAINT fk_{table}_miniapp_user "
+                        "FOREIGN KEY (miniapp_user_id) "
+                        f"REFERENCES {MiniAppUser.__tablename__} (id)"
+                    )
+                )
+        db.session.commit()
+        click.echo(
+            f"Customer info schema upgraded. added: {', '.join(added) or 'none'}; "
+            f"removed: {', '.join(removed) or 'none'}."
+        )
+
     @app.cli.command("sync-wechat-drafts")
     @click.option("--once", is_flag=True, help="Sync once and exit.")
     def sync_wechat_drafts(once: bool) -> None:
@@ -397,9 +455,9 @@ def _seed_customers() -> None:
     _add_if_empty(
         Customer,
         [
-            Customer(company="杭州远景科技", contact="张伟", phone="138****2851", needs=4, last_contact=date(2026, 9, 12)),
-            Customer(company="上海青禾食品", contact="李娜", phone="139****6218", needs=2, last_contact=date(2026, 9, 11)),
-            Customer(company="苏州新锐制造", contact="王强", phone="137****9042", needs=1, last_contact=date(2026, 9, 9)),
+            Customer(company="杭州远景科技", contact="张伟", phone="13800002851", region="浙江杭州", source="手工录入"),
+            Customer(company="上海青禾食品", contact="李娜", phone="13900006218", region="上海", source="线下导入"),
+            Customer(company="苏州新锐制造", contact="王强", phone="13700009042", region="江苏苏州", source="其他"),
         ],
     )
 

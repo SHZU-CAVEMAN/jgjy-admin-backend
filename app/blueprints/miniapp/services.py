@@ -11,9 +11,10 @@ from flask import current_app
 from flask_jwt_extended import create_access_token
 from PIL import Image, UnidentifiedImageError
 from redis.exceptions import RedisError
-from sqlalchemy import or_
+from sqlalchemy import func, or_
 from werkzeug.datastructures import FileStorage
 
+from app.blueprints.customers.models import CustomerNeed
 from app.common.exception import BusinessError
 from app.common.extensions import db
 from app.common.redis_client import get_redis, prefixed_key
@@ -152,8 +153,24 @@ def list_miniapp_users(args: dict[str, Any]) -> dict[str, Any]:
         per_page=per_page,
         error_out=False,
     )
+    users = pagination.items
+    need_counts: dict[int, int] = {}
+    if users:
+        need_counts = dict(
+            db.session.execute(
+                db.select(CustomerNeed.miniapp_user_id, func.count(CustomerNeed.id))
+                .where(
+                    CustomerNeed.miniapp_user_id.in_([user.id for user in users]),
+                    CustomerNeed.is_deleted.is_(False),
+                )
+                .group_by(CustomerNeed.miniapp_user_id)
+            ).all()
+        )
+    items = MiniAppAdminUserSchema(many=True).dump(users)
+    for item in items:
+        item["needCount"] = int(need_counts.get(item["id"], 0))
     return {
-        "items": MiniAppAdminUserSchema(many=True).dump(pagination.items),
+        "items": items,
         "total": pagination.total,
         "page": pagination.page,
         "pageSize": pagination.per_page,
