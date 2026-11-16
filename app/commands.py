@@ -243,6 +243,47 @@ def register_commands(app: Flask) -> None:
             f"removed: {', '.join(removed) or 'none'}."
         )
 
+    @app.cli.command("upgrade-traceability-schema")
+    def upgrade_traceability_schema() -> None:
+        """为溯源表补充新字段并移除废弃字段。"""
+        table = TraceabilityBatch.__tablename__
+        columns = {column["name"] for column in inspect(db.engine).get_columns(table)}
+        additions = {
+            "code": "VARCHAR(64) NULL",
+            "inspection_no": "VARCHAR(64) NULL",
+            "product_id": "INTEGER NULL",
+            "product_name": "VARCHAR(128) NULL",
+            "stock_id": "INTEGER NULL",
+            "stock_name": "VARCHAR(64) NULL",
+            "raw_material": "VARCHAR(64) NULL",
+            "customer": "VARCHAR(128) NULL",
+            "sealed_date": "DATE NULL",
+            "remark": "VARCHAR(255) NULL",
+        }
+        added = []
+        for name, definition in additions.items():
+            if name in columns:
+                continue
+            db.session.execute(
+                text(f"ALTER TABLE {table} ADD COLUMN {name} {definition}")
+            )
+            added.append(name)
+        removed = []
+        for name in ("product", "codes", "status"):
+            if name in columns:
+                db.session.execute(text(f"ALTER TABLE {table} DROP COLUMN {name}"))
+                removed.append(name)
+        indexes = {index.get("name") for index in inspect(db.engine).get_indexes(table)}
+        if f"ix_{table}_code" not in indexes:
+            db.session.execute(
+                text(f"CREATE UNIQUE INDEX ix_{table}_code ON {table} (code)")
+            )
+        db.session.commit()
+        click.echo(
+            f"Traceability schema upgraded. added: {', '.join(added) or 'none'}; "
+            f"removed: {', '.join(removed) or 'none'}."
+        )
+
     @app.cli.command("sync-wechat-drafts")
     @click.option("--once", is_flag=True, help="Sync once and exit.")
     def sync_wechat_drafts(once: bool) -> None:
@@ -384,9 +425,32 @@ def _seed_products() -> None:
     _add_if_empty(
         TraceabilityBatch,
         [
-            TraceabilityBatch(batch="JGY-202609-001", product="江南谷语·典藏", production_date=date(2026, 9, 5), codes=1200, status="已生成"),
-            TraceabilityBatch(batch="JGY-202608-004", product="江南谷语·臻品", production_date=date(2026, 8, 22), codes=800, status="已生成"),
-            TraceabilityBatch(batch="JGY-202608-003", product="商务定制礼盒", production_date=date(2026, 8, 18), codes=600, status="待生成"),
+            TraceabilityBatch(
+                code="JGY-202609-001",
+                batch="PC-202609-001",
+                production_date=date(2026, 9, 5),
+                inspection_no="QZ-0921",
+                product_name="江南谷语·典藏",
+                raw_material="单粮",
+                customer="张先生（尾号 6688）",
+                sealed_date=date(2026, 9, 15),
+            ),
+            TraceabilityBatch(
+                code="JGY-202608-004",
+                batch="PC-202608-004",
+                production_date=date(2026, 8, 22),
+                inspection_no="QZ-0815",
+                product_name="江南谷语·臻品",
+                raw_material="单粮",
+            ),
+            TraceabilityBatch(
+                code="JGY-202608-003",
+                batch="PC-202608-003",
+                production_date=date(2026, 8, 18),
+                inspection_no="QZ-0806",
+                product_name="商务定制礼盒",
+                raw_material="单粮",
+            ),
         ],
     )
 

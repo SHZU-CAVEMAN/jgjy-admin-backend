@@ -61,13 +61,17 @@ class ProductSchema(KeyedSchema):
 
 
 class TraceabilitySchema(KeyedSchema):
-    """校验并序列化溯源批次。"""
+    """校验并序列化溯源记录。"""
 
-    batch = fields.String(required=True, validate=validate.Length(min=1, max=64))
-    product = fields.String(required=True, validate=validate.Length(min=1, max=128))
-    production_date = fields.Date(data_key="date", required=True)
-    codes = fields.Integer(load_default=0, validate=validate.Range(min=0))
-    status = fields.String(
-        load_default="待生成",
-        validate=validate.OneOf(["待生成", "已生成"]),
-    )
+    code = fields.String(allow_none=True, load_default=None, validate=validate.Length(max=64))
+    batch = fields.String(allow_none=True, load_default=None, validate=validate.Length(max=64))
+    production_date = fields.Date(data_key="productionDate", allow_none=True, load_default=None)
+    inspection_no = fields.String(data_key="inspectionNo", allow_none=True, load_default=None, validate=validate.Length(max=64))
+    product_id = fields.Integer(data_key="productId", allow_none=True, load_default=None)
+    product_name = fields.String(data_key="productName", allow_none=True, load_default=None, validate=validate.Length(max=128))
+    stock_id = fields.Integer(data_key="stockId", allow_none=True, load_default=None)
+    stock_name = fields.String(data_key="stockName", allow_none=True, load_default=None, validate=validate.Length(max=64))
+    raw_material = fields.String(data_key="rawMaterial", allow_none=True, load_default=None, validate=validate.Length(max=64))
+    customer = fields.String(allow_none=True, load_default=None, validate=validate.Length(max=128))
+    sealed_date = fields.Date(data_key="sealedDate", allow_none=True, load_default=None)
+    remark = fields.String(allow_none=True, load_default=None, validate=validate.Length(max=255))

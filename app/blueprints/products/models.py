@@ -60,12 +60,35 @@ class Product(BaseModel):
 
 
 class TraceabilityBatch(BaseModel):
-    """表示一个产品溯源批次。"""
+    """表示一条产品溯源记录。"""
 
     __tablename__ = "t_product_traceability"
 
-    batch: Mapped[str] = mapped_column(String(64), unique=True, index=True)
-    product: Mapped[str] = mapped_column(String(128))
-    production_date: Mapped[date] = mapped_column(Date)
-    codes: Mapped[int] = mapped_column(Integer, default=0)
-    status: Mapped[str] = mapped_column(String(16), default="待生成")
+    code: Mapped[str | None] = mapped_column(
+        String(64),
+        unique=True,
+        index=True,
+        nullable=True,
+    )
+    batch: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    production_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    inspection_no: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    product_id: Mapped[int | None] = mapped_column(
+        ForeignKey("t_product_item.id"),
+        nullable=True,
+        index=True,
+    )
+    product_name: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    stock_id: Mapped[int | None] = mapped_column(
+        ForeignKey("t_stock.id"),
+        nullable=True,
+        index=True,
+    )
+    stock_name: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    raw_material: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    customer: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    sealed_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    remark: Mapped[str | None] = mapped_column(String(255), nullable=True)
+
+    product = relationship("Product", lazy="joined")
+    stock = relationship("Stock", lazy="joined")

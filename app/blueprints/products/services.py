@@ -66,8 +66,7 @@ product_service = ProductCrudService(
 traceability_service = CrudService(
     TraceabilityBatch,
     TraceabilitySchema(),
-    ("batch", "product"),
-    ("status",),
+    ("code", "batch", "product_name", "customer"),
 )
 stock_service = CrudService(
     Stock,
@@ -217,6 +216,29 @@ def _serialize_public_product(product: Product) -> dict[str, Any]:
     data["alcohol"] = (stock.alcohol or "") if stock else ""
     data["tons"] = float(stock.tons) if stock and stock.tons is not None else 0
     data["fill"] = 0
+    return data
+
+
+def get_public_trace(code: str) -> dict[str, Any]:
+    """按溯源码、批次号或罐体编号返回溯源记录。"""
+    record = db.session.scalar(
+        db.select(TraceabilityBatch)
+        .join(Stock, TraceabilityBatch.stock_id == Stock.id, isouter=True)
+        .where(
+            TraceabilityBatch.is_deleted.is_(False),
+            or_(
+                TraceabilityBatch.code == code,
+                TraceabilityBatch.batch == code,
+                Stock.code == code,
+            ),
+        )
+    )
+    if record is None:
+        raise BusinessError("溯源记录不存在", 404)
+    data = TraceabilitySchema().dump(record)
+    stock = record.stock
+    data["stockCode"] = (stock.code or "") if stock else ""
+    data["stockZone"] = (stock.zone or "") if stock else ""
     return data
 
 

@@ -16,6 +16,7 @@ from app.blueprints.company.services import get_company_info
 from app.blueprints.products.services import (
     get_public_home_summary,
     get_public_product,
+    get_public_trace,
     list_public_products,
 )
 from app.blueprints.news.services import (
@@ -169,6 +170,15 @@ def miniapp_news_comment_create(media_id: str):
 def miniapp_need_categories():
     """返回小程序启用的需求分类。"""
     return success(list_public_need_categories())
+
+
+@miniapp_bp.get("/trace")
+def miniapp_trace():
+    """按溯源码返回溯源报告。"""
+    code = (request.args.get("code") or "").strip()
+    if not code:
+        raise BusinessError("请输入溯源码", 422)
+    return success(get_public_trace(code))
 
 
 @miniapp_bp.get("/favorites")
