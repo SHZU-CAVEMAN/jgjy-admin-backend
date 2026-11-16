@@ -18,6 +18,7 @@ from app.blueprints.products.services import (
     get_public_product,
     get_public_trace,
     list_public_products,
+    list_user_traces,
 )
 from app.blueprints.news.services import (
     create_article_comment,
@@ -179,6 +180,13 @@ def miniapp_trace():
     if not code:
         raise BusinessError("请输入溯源码", 422)
     return success(get_public_trace(code))
+
+
+@miniapp_bp.get("/my-traces")
+@jwt_required()
+def miniapp_my_traces():
+    """返回当前小程序用户自己的溯源记录。"""
+    return success(list_user_traces(int(get_jwt_identity())))
 
 
 @miniapp_bp.get("/favorites")

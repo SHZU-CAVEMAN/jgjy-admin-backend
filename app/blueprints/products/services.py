@@ -12,6 +12,7 @@ from PIL import Image, ImageOps, UnidentifiedImageError
 from sqlalchemy import func, or_
 from werkzeug.datastructures import FileStorage
 
+from app.blueprints.customers.models import Customer
 from app.common.crud import CrudService
 from app.common.exception import BusinessError
 from app.common.extensions import db
@@ -268,10 +269,36 @@ def get_public_trace(code: str) -> dict[str, Any]:
     )
     if record is None:
         raise BusinessError("溯源记录不存在", 404)
+    return _serialize_trace_record(record)
+
+
+def list_user_traces(miniapp_user_id: int) -> list[dict[str, Any]]:
+    """返回小程序用户所属客户的全部溯源记录。"""
+    customer_ids = db.session.scalars(
+        db.select(Customer.id).where(Customer.miniapp_user_id == miniapp_user_id)
+    ).all()
+    if not customer_ids:
+        return []
+    records = db.session.scalars(
+        db.select(TraceabilityBatch)
+        .where(
+            TraceabilityBatch.is_deleted.is_(False),
+            TraceabilityBatch.customer_id.in_(customer_ids),
+        )
+        .order_by(TraceabilityBatch.sealed_date.desc(), TraceabilityBatch.id.desc())
+    ).all()
+    return [_serialize_trace_record(record) for record in records]
+
+
+def _serialize_trace_record(record: TraceabilityBatch) -> dict[str, Any]:
+    """将溯源记录转换为小程序展示结构。"""
     data = TraceabilitySchema().dump(record)
     stock = record.stock
     data["stockCode"] = (stock.code or "") if stock else ""
     data["stockZone"] = (stock.zone or "") if stock else ""
+    data["createTime"] = (
+        record.create_time.strftime("%Y-%m-%d") if record.create_time else ""
+    )
     return data
 
 
