@@ -9,6 +9,7 @@ from app.common.response import success
 
 from .services import (
     category_service,
+    generate_trace_code,
     get_product_image_folder,
     product_service,
     save_product_image,
@@ -27,6 +28,13 @@ register_crud_routes(
     traceability_service,
 )
 register_crud_routes(products_bp, "/stocks", "stocks", stock_service)
+
+
+@products_bp.get("/traceability/generate-code")
+@jwt_required()
+def generate_code():
+    """按产品分类与定制信息生成溯源码。"""
+    return success(generate_trace_code(request.args))
 
 
 @products_bp.post("/images")

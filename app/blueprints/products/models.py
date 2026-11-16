@@ -85,10 +85,17 @@ class TraceabilityBatch(BaseModel):
         index=True,
     )
     stock_name: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    outbound_tons: Mapped[float | None] = mapped_column(Numeric(10, 2), nullable=True)
     raw_material: Mapped[str | None] = mapped_column(String(64), nullable=True)
     customer: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    customer_id: Mapped[int | None] = mapped_column(
+        ForeignKey("t_customer_info.id"),
+        nullable=True,
+        index=True,
+    )
     sealed_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     remark: Mapped[str | None] = mapped_column(String(255), nullable=True)
 
     product = relationship("Product", lazy="joined")
     stock = relationship("Stock", lazy="joined")
+    customer_record = relationship("Customer", lazy="joined")

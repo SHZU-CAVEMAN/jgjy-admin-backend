@@ -47,6 +47,7 @@ class ProductSchema(KeyedSchema):
     description = fields.String(load_default="", validate=validate.Length(max=512))
     stock_id = fields.Integer(data_key="stockId", allow_none=True, load_default=None)
     stock_name = fields.Method(data_key="stockName", serialize="get_stock_name", dump_only=True)
+    stock_category = fields.Method(data_key="stockCategory", serialize="get_stock_category", dump_only=True)
     image_original_url = fields.String(data_key="imageOriginalUrl", required=True, validate=validate.Length(max=512))
     thumbnail_url = fields.String(data_key="thumbnailUrl", required=True, validate=validate.Length(max=512))
     detail_image_url = fields.String(data_key="detailImageUrl", required=True, validate=validate.Length(max=512))
@@ -58,6 +59,10 @@ class ProductSchema(KeyedSchema):
     def get_stock_name(self, product) -> str:
         """返回关联库存的罐体名称。"""
         return product.stock.name if product.stock and product.stock.name else ""
+
+    def get_stock_category(self, product) -> str:
+        """返回关联库存的酒体品种。"""
+        return product.stock.category if product.stock and product.stock.category else ""
 
 
 class TraceabilitySchema(KeyedSchema):
@@ -71,7 +76,9 @@ class TraceabilitySchema(KeyedSchema):
     product_name = fields.String(data_key="productName", allow_none=True, load_default=None, validate=validate.Length(max=128))
     stock_id = fields.Integer(data_key="stockId", allow_none=True, load_default=None)
     stock_name = fields.String(data_key="stockName", allow_none=True, load_default=None, validate=validate.Length(max=64))
+    outbound_tons = fields.Float(data_key="outboundTons", allow_none=True, load_default=None)
     raw_material = fields.String(data_key="rawMaterial", allow_none=True, load_default=None, validate=validate.Length(max=64))
     customer = fields.String(allow_none=True, load_default=None, validate=validate.Length(max=128))
+    customer_id = fields.Integer(data_key="customerId", allow_none=True, load_default=None)
     sealed_date = fields.Date(data_key="sealedDate", allow_none=True, load_default=None)
     remark = fields.String(allow_none=True, load_default=None, validate=validate.Length(max=255))

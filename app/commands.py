@@ -255,8 +255,10 @@ def register_commands(app: Flask) -> None:
             "product_name": "VARCHAR(128) NULL",
             "stock_id": "INTEGER NULL",
             "stock_name": "VARCHAR(64) NULL",
+            "outbound_tons": "DECIMAL(10, 2) NULL",
             "raw_material": "VARCHAR(64) NULL",
             "customer": "VARCHAR(128) NULL",
+            "customer_id": "INTEGER NULL",
             "sealed_date": "DATE NULL",
             "remark": "VARCHAR(255) NULL",
         }
@@ -273,11 +275,49 @@ def register_commands(app: Flask) -> None:
             if name in columns:
                 db.session.execute(text(f"ALTER TABLE {table} DROP COLUMN {name}"))
                 removed.append(name)
-        indexes = {index.get("name") for index in inspect(db.engine).get_indexes(table)}
+        indexes = {index.get("name"): index for index in inspect(db.engine).get_indexes(table)}
+        if "batch" in columns:
+            db.session.execute(
+                text(f"ALTER TABLE {table} MODIFY batch VARCHAR(64) NULL")
+            )
+        if "production_date" in columns:
+            db.session.execute(
+                text(f"ALTER TABLE {table} MODIFY production_date DATE NULL")
+            )
+        if indexes.get(f"ix_{table}_batch", {}).get("unique"):
+            if db.engine.dialect.name == "mysql":
+                db.session.execute(text(f"DROP INDEX ix_{table}_batch ON {table}"))
+            else:
+                db.session.execute(text(f"DROP INDEX ix_{table}_batch"))
+            db.session.execute(
+                text(f"CREATE INDEX ix_{table}_batch ON {table} (batch)")
+            )
         if f"ix_{table}_code" not in indexes:
             db.session.execute(
                 text(f"CREATE UNIQUE INDEX ix_{table}_code ON {table} (code)")
             )
+        if f"ix_{table}_customer_id" not in indexes:
+            db.session.execute(
+                text(
+                    f"CREATE INDEX ix_{table}_customer_id ON {table} (customer_id)"
+                )
+            )
+        if db.engine.dialect.name == "mysql":
+            foreign_keys = inspect(db.engine).get_foreign_keys(table)
+            has_customer_fk = any(
+                foreign_key.get("constrained_columns") == ["customer_id"]
+                and foreign_key.get("referred_table") == Customer.__tablename__
+                for foreign_key in foreign_keys
+            )
+            if not has_customer_fk:
+                db.session.execute(
+                    text(
+                        f"ALTER TABLE {table} "
+                        f"ADD CONSTRAINT fk_{table}_customer_id "
+                        "FOREIGN KEY (customer_id) "
+                        f"REFERENCES {Customer.__tablename__} (id)"
+                    )
+                )
         db.session.commit()
         click.echo(
             f"Traceability schema upgraded. added: {', '.join(added) or 'none'}; "

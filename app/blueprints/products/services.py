@@ -1,5 +1,7 @@
 """产品业务域服务。"""
 
+import secrets
+from datetime import date
 from io import BytesIO
 from pathlib import Path
 from typing import Any
@@ -30,6 +32,8 @@ DETAIL_IMAGE_MAX_BYTES = 164 * 1024
 ORIGINAL_FORMATS = {"JPEG": "jpg", "PNG": "png", "WEBP": "webp"}
 CATEGORY_TYPES = {"浓香型": "nong", "酱香型": "jiang", "清香型": "qing"}
 TYPE_CATEGORIES = {value: key for key, value in CATEGORY_TYPES.items()}
+TRACE_PREFIXES = {"酱香": "JX", "清香": "QX", "浓香": "NX"}
+TRACE_DEFAULT_PREFIX = "JY"
 
 
 class ProductCrudService(CrudService):
@@ -74,6 +78,35 @@ stock_service = CrudService(
     ("category", "name", "code", "zone"),
     ("status",),
 )
+
+
+def build_trace_code(category: str | None, sealed_date: str | None) -> str:
+    """按 分类前缀-定制日期-随机短码 生成溯源码。"""
+    text = category or ""
+    prefix = next(
+        (value for key, value in TRACE_PREFIXES.items() if key in text),
+        TRACE_DEFAULT_PREFIX,
+    )
+    day = (sealed_date or "").replace("-", "") or date.today().strftime("%Y%m%d")
+    return f"{prefix}-{day}-{secrets.token_hex(3).upper()}"
+
+
+def generate_trace_code(args) -> dict[str, str]:
+    """根据所选产品及其关联信息生成溯源码。"""
+    product_id = str(args.get("productId") or "").strip()
+    product = db.session.get(Product, int(product_id)) if product_id.isdigit() else None
+    if product is None or product.is_deleted:
+        raise BusinessError("请先选择产品，再生成溯源码", 422)
+    sealed_date = str(args.get("sealedDate") or "").strip()
+    code = build_trace_code(product.category, sealed_date)
+    for _ in range(5):
+        exists = db.session.scalar(
+            db.select(TraceabilityBatch.id).where(TraceabilityBatch.code == code)
+        )
+        if exists is None:
+            break
+        code = build_trace_code(product.category, sealed_date)
+    return {"code": code}
 
 
 def save_product_image(image_file: FileStorage) -> dict[str, str]:
